@@ -1,0 +1,151 @@
+#!/bin/sh  
+# \
+  exec oagtclsh "$0" "$@"
+
+set auto_path [linsert $auto_path 0  /usr/local/oag/apps/lib/$env(HOST_ARCH)]
+set auto_path [linsert $auto_path 0 /usr/local/oag/lib_patch/$env(HOST_ARCH)]
+set args $argv
+set average 1
+set setEffic 0
+set debug 0
+set cycles 5
+#time range in ms for filtering the booster current waveform data
+APSStandardSetup
+APSParseArguments {average setEffic injTimes debug cycles}
+
+pv linkw SRcurrent S35DCCT:currentCC 
+set SRsum 0.0
+
+set dir [APSGoToDailyDirectory]
+proc MeasInjEffic {args} {
+    global SRcurrent SRsum dir injTimes debug cycles
+
+    set tmpRoot /tmp/[APSTmpString]
+    
+    APSAddToTmpFileList -ID measEffic -fileList $tmpRoot.sdds
+    exec sddsmonitor /home/helios/SR/daily/2020/11/17/1/BTScharge.mon -interval=0.5 -steps=50 $tmpRoot.sdds -erase &
+    
+    if [catch {exec cavget -list=S35DCCT:currentCC -repeat=num=5,average,pause=0.5 -pend=10} current0] {
+	puts stderr "Error reading SR current before injection to 648 bucket: $result"
+	exit 1
+    }
+    #turn on injection
+    if [catch {exec cavput -list=Mt:SRinjectNumBunchesAO=1,Mt:SRinjectMaxCyclesAO=$cycles,Mt:SRinjectCurrentLimitAO=100 -pend=10 } result] {
+	puts stderr "Error setup injection: $result"
+	exit 0
+    }
+    after 1000
+    if [catch {exec cavput -list=Mt:SRbunch000=648 -pend=10 } result] {
+	puts stderr "Error setup bucket: $result"
+	exit 0
+    }
+    if [catch {exec cavput -list=Mt:SRinjectMultiBO.VAL=1 -pend=30} result] {
+	puts stderr "Error turn on injection: $result"
+	exit 1
+    }
+    
+    after [expr (4+$cycles)*1000]
+    #measure SR current
+   
+    set sum 0.0
+    set srList ""
+    for {set i 0} {$i<4} {incr i} {
+	pv getw SRcurrent 
+	update
+	lappend srList $SRcurrent
+	set sum [expr $sum+$SRcurrent]
+	after 500
+    }
+    set srList1 [lsort -real $srList]
+    set srCurrent [expr ([lindex $srList1 1] + [lindex $srList1 2])/2.0]
+    
+    #set srCurrent [expr $sum/4.0]
+    if [catch {exec sddsprocess $tmpRoot.sdds \
+                 -proc=BTS:CM:q,max,BTScharge -pipe=out \
+                 | sdds2stream -pipe -par=BTScharge} btsCharge] {
+        return -code error "Error processing btsCharge: $btsCharge"
+    }
+    set srDelta [expr $srCurrent - $current0]
+   # pxemacsuts "sr $srCurrent; bts $btsCharge"
+    if {$btsCharge<0.1} {
+        set injEffic 0
+    } else {
+        set injEffic [expr $srDelta/($btsCharge*5) * 3.68]
+        set SRsum [expr $srCurrent + $SRsum]
+    }
+    if $debug {
+        puts "SR current before injecting, $current0, SR  delta: $srDelta; bts charge: $btsCharge"
+    }
+    #dump bucket 648
+    exec  /home/helios/SR/bin/kickOutSingleBunch -bucket 648 -kicker IK1 -amplitude 5
+    #check the bucket is gone
+    #exec /home/oxygen/SHANG/oag/apps/src/tcltkapp/oagapp/collectBCMdataSet -dataSet $dir/injEffmeas
+    exec sddswget -pv=SR:BCM:BunchQ  $dir/injEffmeas
+    if [catch {exec sddsprocess $dir/injEffmeas -pipe=out  \
+		   -process=Waveform,max,MaxCurrent \
+		   | sddsprocess -pipe -filter=col,Index,647.5,648.5 \
+		   | sddsprocess -pipe -proc=Waveform,first,current \
+		   | sddsprocess -pipe "-define=par,relativeCurr,current MaxCurrent /" \
+		   | sdds2stream -pipe=in -par=relativeCurr } value] {
+	puts stderr "Error getting bucket 648 current: $value"
+	exit 1
+    }
+    if {$btsCharge>0.1 && $value>0.08} {
+	puts stderr "Error: the 648 bucket current is not zero ($value)"
+	exit 1
+    }
+    return $injEffic
+}
+
+exec sddscasr -restore /home/helios/oagData/sr/optimizeConfig/DAOptimization/singleShot.kickers
+
+after 500
+
+exec sddscasr -restore /home/helios/oagData/sr/optimizeConfig/DAOptimization/singleShot_IK3.kickers
+
+if [catch {exec cavget -list=L1:RFG:KIK:chargeTimePD.GATE -num -pend=10} linac] {
+    puts stderr "Error reading gun status: $linac"
+    exit 1
+}
+if !$linac {
+    if [catch {TogglePulsedMagnetEnables -location GuntoBoosterExt } result] {
+	return -code error "Error turning injection: $result"
+	exit 1
+    }
+    after 2000
+}
+
+set sum 0.0
+set num 0
+for {set i 0} {$i<$average} {incr i} {
+    if [catch {MeasInjEffic} injEffic] {
+        puts stderr "Error measuring inj effic: $injEffic"
+        exit 0
+    }
+    if $injEffic==0 {
+        #do not use this data
+        continue
+    } else {
+        incr num
+        set sum [expr $sum+$injEffic]
+    }
+}
+if $num {
+    set effic [expr $sum/$num]
+    set srCurrent [expr $SRsum/$num]
+} else {
+    set effic 0
+    set srCurrent 0
+}
+if $effic<0 {
+    set effic 0
+}
+
+if $setEffic {
+   exec caput SRInjEffic_BTS $effic
+}
+puts $effic
+
+
+#catch {exec caput SRInjEffic_BTS -pend=1 $effic}
+exit 0
