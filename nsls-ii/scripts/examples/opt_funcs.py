@@ -10,7 +10,7 @@ global SEXTUPOLES_EXTRA, SEXTUPOLES_SCRIPT, variables_ch, kgroups
 
 MODE = 'direct'
 LIFETIME_SCRIPT = "measLifeTimeAdaptive.py"
-EFF_SCRIPT = "/home/oxygen/SHANG/oag/apps/src/tcltkapp/oagapp/measInjEffic648"
+EFF_SCRIPT = "measInjEffic648"
 kgroups = {}
 
 def get_settings_from_groups(knob_groups):
@@ -34,7 +34,7 @@ def get_settings_from_groups(knob_groups):
     )
     ref_point = {'EFF': 0.2, 'LT': 1.0}
     SEXTUPOLES_EXTRA = ['-setPVRelative','1','-dryRun','0']
-    SEXTUPOLES_SCRIPT = "/home/oxygen/SHANG/oag/apps/src/tcltkapp/oagapp/changeSRSextupoles"
+    SEXTUPOLES_SCRIPT = "changeSRSextupoles"
     return gvocs_global, ref_point, ival_dict
 
 
