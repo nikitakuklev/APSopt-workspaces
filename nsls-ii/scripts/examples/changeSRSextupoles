@@ -1,0 +1,55 @@
+#!/bin/sh  
+# \
+exec oagtclsh "$0" "$@"
+
+set auto_path [linsert $auto_path 0 /usr/local/oag/apps/lib/$env(HOST_ARCH)]
+set auto_path [linsert $auto_path 0 /usr/local/oag/lib_patch/$env(HOST_ARCH)]
+APSStandardSetup
+
+set tagList ""
+set valueList ""
+set setPVRelative 1
+set SCRref /home/helios/oagData/SCR/snapshots/SR/SR2023-113-0423-012816.gz
+set dryRun 0
+set args $argv
+APSParseArguments {tagList valueList setPVRelative dryRun SCRref}
+
+if $setPVRelative {
+    set tmpRoot /tmp/[APSTmpString]
+    #puts $tmpRoot
+    if [catch {exec sddsmakedataset $tmpRoot.1 -col=ControlName,type=string -data=[join $tagList ,] \
+		   -col=Delta,type=double -data=[join $valueList ,] } result] {
+	return -code error "Error creating sextuple data file: $result"
+    }
+    if [catch {exec sddsprocess $tmpRoot.1 -nowarn -reedit=col,ControlName,ei/:CurrentAO/ } resut] {
+	return -code error "Error editing file: $result"
+    }
+    if [catch {exec sddsxref $tmpRoot.1 $SCRref  -pipe=out -match=ControlName -take=ValueString -reuse \
+		   | sddsprocess -pipe -scan=col,InitValue,ValueString,%lf \
+		   | sddsprocess -pipe "-define=col,NewValue,InitValue Delta +" \
+		   | sddsconvert -pipe -del=col,ValueString \
+		   | sddsprocess -pipe=in $tmpRoot.set "-print=col,ValueString,%lf,NewValue" } result] {
+	puts stderr "Error creating retstore file: $result"
+	exit 1
+    }
+    if !$dryRun {
+	if [catch {exec sddscasr -restore $tmpRoot.set } result] {
+	    puts stderr "Error setting pv values: $result"
+	    exit 1
+	}
+	#APSAddToTmpFileList -ID sext -fileList "$tmpRoot.1 $tmpRoot.set"
+    } else {
+	puts $tmpRoot.set
+    }
+} else {
+    set putList ""
+    foreach pv $tagList val $valueList {
+	lappend putList $pv=$val
+    }
+    if [catch {exec cavput -list=[join $pvList ,] -pend=30 -printErrors} result] {
+	puts stderr "Error setting PVs: $result"
+	exit 1
+    }
+}
+
+exit 0
