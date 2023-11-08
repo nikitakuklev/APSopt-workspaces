@@ -13,8 +13,8 @@ dependencies:
   - python=3.11
   - pip
   - pytest
-  - ruff
   - pytest-qt
+  - ruff
   
   - ipython
   - jupyterlab
@@ -77,12 +77,12 @@ dependencies:
   - psutil
   - imageio
 
-  - "ray-default"
-  - prefect
+#  - "ray-default"
+#  - prefect
   - pytorch::pytorch>=2.0
   - pytorch::torchaudio
   - pytorch::torchvision
-  - pytorch::pytorch-cuda=11.8
+  - pytorch::pytorch-cuda=12.1
   - gpytorch
   - botorch>=0.9
   - pyro-ppl
