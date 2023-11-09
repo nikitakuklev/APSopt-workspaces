@@ -13,7 +13,7 @@ def make_dummy_eval(gvocs):
 
 
 def make_real_eval(gvocs):
-   # Create a function that maps variables to objectves+observables
+   # Create a function that maps variables to objectives+observables
 
    def master_eval_function(inputs_dict):
       raise NotImplementedError
