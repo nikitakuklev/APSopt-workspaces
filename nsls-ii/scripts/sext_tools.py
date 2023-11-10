@@ -116,18 +116,13 @@ def get_twiss(param_file, n_pages=1):
     return sdds
 
 
-
 def make_df(sextupoles, delta=1.0):
     df = pd.DataFrame({'ElementName':sextupoles,'ElementParameter':'K2',
                        'ParameterValue':delta,'ParameterMode':'differential'})
     return df
 
-def wrap_40(x):
-    y = x if x <= 40 else x % 40
-    return y
-
 def sort_by_sector(v):
-    order = [rf'^S{i}\D.*?' for i in range(1,41)]
+    order = [rf'.*?{i:02d}A|B$' for i in range(1,30)]
     out = []
     for o in order:
         for x in v:
