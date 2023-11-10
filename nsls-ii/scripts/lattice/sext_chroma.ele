@@ -1,0 +1,31 @@
+
+    &run_setup
+        default_order = 3,
+        use_beamline = RING,
+        lattice = 20230915_aphla_bare_w_xbpms_MAG_bare.lte,
+        p_central_mev = 3e3,
+        concat_order = 0,
+    &end
+        
+        &load_parameters
+            allow_missing_elements = 1,
+            filename = nullknobs.param,
+            allow_missing_parameters = 1,
+            change_defined_values = 0,
+        &end
+        
+    &run_control
+        n_steps = 2,
+    &end
+
+    &twiss_output
+        output_at_each_step = 1,
+        filename = sext.twi,
+        matched = 1,
+        radiation_integrals = 0,
+    &end
+
+    &bunched_beam &end
+
+    &track &end
+    
