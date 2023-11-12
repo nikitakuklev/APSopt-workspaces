@@ -1,15 +1,20 @@
 import time
+import json
+from pathlib import Path
+from collections import defaultdict
+import re
 
 import numpy as np
 import matplotlib.pyplot as plt
 from epics import PV
+
+from common import add_callback, turn_on_pv_monitor, turn_off_pv_monitor
 
 REGBPM_PV_PREFIXES = [
     f"SR:C{cell_num:02d}-BI{{BPM:{bpm_num:d}}}"
     for cell_num in range(1, 30 + 1)
     for bpm_num in range(1, 6 + 1)
 ]
-t0 = time.perf_counter()
 REGBPM_SUM_PVS = [
     PV(f"{prefix}Ampl:SSA-Calc", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
 ]
@@ -20,7 +25,6 @@ REGBPM_COUNTS_PVS = [
     PV(f"{prefix}AmplV:Max-I", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
 ]
 
-
 nRegBPM = len(REGBPM_PV_PREFIXES)
 
 DCCT_PV = PV("SR:C03-BI{DCCT:1}I:Total-I", auto_monitor=False)
@@ -28,6 +32,26 @@ DCCT_PV = PV("SR:C03-BI{DCCT:1}I:Total-I", auto_monitor=False)
 ABORT_PV_TIMEOUT = 0.1  # [s]
 SUM_PVS_TIMEOUT = 0.3  # [s]
 DCCT_PV_TIMEOUT = 0.1  # [s]
+
+PV_STRS = json.loads(Path("pvs_lifetime.json").read_text())
+PVS = {k: PV(pv_str, auto_monitor=False) for k, pv_str in PV_STRS.items()}
+
+# Storage used by callbacks
+CB_DATA = defaultdict(dict)
+CB_ARGS = defaultdict(dict)
+
+
+def callback_append_to_list(pvname, **kwargs):
+    if False:
+        debugpy.debug_this_thread()  # Needed for VSCode thread debugging
+        print(kwargs)
+
+    cb_data = CB_DATA[pvname]
+
+    for k in ["value", "timestamp"]:
+        if k not in cb_data:
+            cb_data[k] = []
+        cb_data[k].append(kwargs.get(k))
 
 
 def _getSimulatedDCCT():
@@ -108,6 +132,15 @@ def measLifetimeAdaptivePeriod(
     N_bpm = nRegBPM
 
     bad_bpm_indexes = np.array([])
+
+    moni_pv_keys = ["DCCT_1", "DCCT_2", "DCCT_precise", "eps_x_nm", "eps_y_pm"]
+    moni_pv_keys += [_pv.pvname for _pv in REGBPM_SUM_PVS]
+    for k in moni_pv_keys:
+        add_callback(PVS[k], callback_append_to_list)
+        turn_on_pv_monitor(PVS[k])
+    for _pv in REGBPM_SUM_PVS + REGBPM_SUMSTD_PVS:
+        add_callback(_pv, callback_append_to_list)
+        turn_on_pv_monitor(_pv)
 
     N_samples = int(np.ceil(float(max_wait) / float(update_period)))
 
@@ -225,7 +258,7 @@ def measLifetimeAdaptivePeriod(
             np.abs(I_start - I_end) > (noise_level[~nan_col_inds] * sum_diff_thresh_fac)
         )
 
-        if all_out_of_noise:
+        if all_out_of_noise and (i >= min_samples - 1):
             break
 
         if mode in ("online", "simulated"):
@@ -234,6 +267,11 @@ def measLifetimeAdaptivePeriod(
                 if profiler_on:
                     idle_time += idle
                 time.sleep(idle)
+
+    for k in moni_pv_keys:
+        turn_off_pv_monitor(PVS[k])
+    for _pv in REGBPM_SUM_PVS + REGBPM_SUMSTD_PVS:
+        turn_off_pv_monitor(_pv)
 
     timestamp = time.perf_counter()
     if profiler_on:
@@ -307,7 +345,6 @@ def measLifetimeAdaptivePeriod(
             rf"Lifetime [hr] = {filtered_avg_tau_hr:.2f} $\pm$ {filtered_rms_tau_hr:.2f}"
         )
 
-
         if plt_show:
             plt.show()
 
@@ -320,6 +357,23 @@ def measLifetimeAdaptivePeriod(
     out["outlier_indexes"] = outlier_indexes
     out["aborted"] = aborted
 
+    moni_data = {}
+    for k in moni_pv_keys:
+        pvname = PV_STRS[k]
+        moni_data[k] = {k2: np.array(v2) for k2, v2 in CB_DATA[pvname].items()}
+    for _pv in REGBPM_SUM_PVS:
+        pvname = _pv.pvname
+        cell_str, bpm_num_str = re.match("SR:(C\d\d)-BI\{BPM:(\d)\}", pvname).groups()
+        k = f"sum_{cell_str}-P{bpm_num_str}"
+        moni_data[k] = {k2: np.array(v2) for k2, v2 in CB_DATA[pvname].items()}
+    for _pv in REGBPM_SUMSTD_PVS:
+        pvname = _pv.pvname
+        cell_str, bpm_num_str = re.match("SR:(C\d\d)-BI\{BPM:(\d)\}", pvname).groups()
+        k = f"sumstd_{cell_str}-P{bpm_num_str}"
+        moni_data[k] = {k2: np.array(v2) for k2, v2 in CB_DATA[pvname].items()}
+
+    out["moni_data"] = moni_data
+
     return out
 
 
@@ -328,7 +382,7 @@ if __name__ == "__main__":
         max_wait=120.0,
         update_period=1.0,
         sigma_cut=3.0,
-        sum_diff_thresh_fac=20.0, #10.0, #5.0,
+        sum_diff_thresh_fac=20.0,  # 10.0, #5.0,
         abort_pv=None,
         mode="online",
         min_dcct_mA=0.2,

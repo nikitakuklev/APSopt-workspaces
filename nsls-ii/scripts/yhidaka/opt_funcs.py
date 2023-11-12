@@ -14,12 +14,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from epics import PV
 
-from common import (apply_scalar_pv_change, add_callback, turn_on_pv_monitor, turn_off_pv_monitor)
+from common import (
+    apply_scalar_pv_change,
+    add_callback,
+    turn_on_pv_monitor,
+    turn_off_pv_monitor,
+)
 import lifetime
 import injection
 import sexts_ctrl
-from bunch_cleaning import (turn_on_BxB_feedback,
-                            turn_off_BxB_feedback)
+from bunch_cleaning import turn_on_BxB_feedback, turn_off_BxB_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,7 @@ PVS = {k: PV(pv_str, auto_monitor=False) for k, pv_str in PV_STRS.items()}
 # Storage used by callbacks
 CB_DATA = defaultdict(dict)
 CB_ARGS = defaultdict(dict)
+
 
 def setup_pinger_for_inj_eff_meas(pinger_peak_bucket_index, clear_setpoint_kV):
     # pinger_peak_bucket_index = 620  # = 1280 - 1320/2
@@ -46,7 +51,6 @@ def clearnup_pinger_for_inj_eff_meas(pinger_settings_filepath):
 
 
 def acquire_lifetime_normalization_data():
-
     # First inject into camshaft area
     # See in what range of DCCT, orbit is OK
     # Try cleaning bunches
@@ -56,13 +60,11 @@ def acquire_lifetime_normalization_data():
     raise NotImplementedError
 
 
-
 def analyze_lifetime_normalization_data():
     raise NotImplementedError
 
 
 def apply_sextupole_changes(inputs_dict):
-
     sexts_ctrl.change_sext_strengths(target_sp_phy, family_or_group)
 
 
@@ -74,14 +76,14 @@ def setup_for_orbit_correction():
     apply_scalar_pv_change(PVS["SOFB_cor_frac"], 0.02)
     apply_scalar_pv_change(PVS["SOFB_adaptive"], 0.0)
 
-def turn_on_SOFB():
 
+def turn_on_SOFB():
     if PVS["SOFB_enabled"].get() != 1:
         PVS["SOFB_turn_on"].put(1)
         PVS["SOFB_turn_on"].get()
 
-def turn_off_SOFB():
 
+def turn_off_SOFB():
     while PVS["SOFB_enabled"].get() != 0:
         PVS["SOFB_turn_off"].put(1)
         PVS["SOFB_turn_off"].get()
@@ -133,6 +135,7 @@ def cleanup_for_tune_correction():
     PVS["nux_SP"].get()
     PVS["nuy_SP"].put(0.267)
     PVS["nuy_SP"].get()
+
 
 def correct_tunes(dnu_thresh=2e-3):
     while (np.abs(PVS["nux_RB"].get() - PVS["nux_SP"].get()) > dnu_thresh) or (
@@ -190,22 +193,21 @@ def meas_lin_chrom(max_wait=60.0):
 
     return lin_ksix, lin_ksiy
 
-def callback_append_to_list(pvname, **kwargs):
 
+def callback_append_to_list(pvname, **kwargs):
     if False:
         debugpy.debug_this_thread()  # Needed for VSCode thread debugging
         print(kwargs)
 
     cb_data = CB_DATA[pvname]
 
-    for k in ['value', 'timestamp']:
+    for k in ["value", "timestamp"]:
         if k not in cb_data:
             cb_data[k] = []
         cb_data[k].append(kwargs.get(k))
 
 
 def meas_tunes_emittances(duration):
-
     pv_keys = ["nux_RB", "nuy_RB", "eps_x_nm", "eps_y_pm"]
 
     for k in pv_keys:
@@ -226,7 +228,6 @@ def meas_tunes_emittances(duration):
 
 
 def prep_for_optim():
-
     injection.setup_kickout_pinger_settings()
 
     turn_off_BxB_feedback()
@@ -241,7 +242,8 @@ def prep_for_optim():
     target_bucket_number_list = [1281, 0]
     pulse_width_ns_list = [40.0, 40.0]
     injection.refill_lifetime_meas_bunches(
-        target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list)
+        target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list
+    )
 
 
 def master_eval_function(inputs_dict):
@@ -376,12 +378,12 @@ def master_eval_function(inputs_dict):
 
     time.sleep(2.0)
     res = meas_tunes_emittances(duration=3.0)
-    nux = res['nux_RB']
-    nuy = res['nuy_RB']
-    res['eps_x_nm']['value'] *= 1e-9 # converte [nm] to [m]
-    res['eps_y_pm']['value'] *= 1e-12 # converte [pm] to [m]
-    eps_x = res['eps_x_nm']
-    eps_y = res['eps_y_pm']
+    nux = res["nux_RB"]
+    nuy = res["nuy_RB"]
+    res["eps_x_nm"]["value"] *= 1e-9  # converte [nm] to [m]
+    res["eps_y_pm"]["value"] *= 1e-12  # converte [pm] to [m]
+    eps_x = res["eps_x_nm"]
+    eps_y = res["eps_y_pm"]
 
     turn_off_BxB_feedback()
 
@@ -393,7 +395,7 @@ def master_eval_function(inputs_dict):
             update_period=1.0,
             sigma_cut=3.0,
             sum_diff_thresh_fac=5.0,
-            min_samples=5, # min. of 5 seconds
+            min_samples=5,  # min. of 5 seconds
             abort_pv=None,
             mode="online",
             min_dcct_mA=0.2,
@@ -410,23 +412,30 @@ def master_eval_function(inputs_dict):
     logger.info("Efficiency measurement START")
     try:
         res = injection.meas_inj_eff_v1(
-            max_cum_mA=2.0, max_duration=60.0, pre_inj_wait=2.0, post_inj_wait=3.0)
+            max_cum_mA=2.0, max_duration=60.0, pre_inj_wait=2.0, post_inj_wait=3.0
+        )
         objective_eff = res["eff_percent"]
     except:
         logger.error("Efficiency script failed")
         logger.error(f"{traceback.format_exc()}")
         objective_eff = np.nan
 
-    return {"LT": objective_lifetime, "EFF": objective_eff,
-            "_nux": nux, "_nuy": nuy, "_eps_x": eps_x, "_eps_y": eps_y}
+    return {
+        "LT": objective_lifetime,
+        "EFF": objective_eff,
+        "_nux": nux,
+        "_nuy": nuy,
+        "_eps_x": eps_x,
+        "_eps_y": eps_y,
+    }
 
-if __name__ == '__main__':
 
+if __name__ == "__main__":
     if False:
         # Measure chromaticity [must use at least 5-sec dealy between
         # each step to allow 4-step BxB tune window]
         lin_ksix, lin_ksiy = meas_lin_chrom(max_wait=60.0)
 
     elif True:
-        duration = 5.0 # [s]
+        duration = 5.0  # [s]
         meas_tunes_emittances(duration)

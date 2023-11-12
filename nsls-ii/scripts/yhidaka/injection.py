@@ -16,7 +16,12 @@ PUT_ONLINE = False
 if PUT_ONLINE:
     PV.put = print
 
-from common import (apply_scalar_pv_change, turn_on_pv_monitor, turn_off_pv_monitor, add_callback)
+from common import (
+    apply_scalar_pv_change,
+    turn_on_pv_monitor,
+    turn_off_pv_monitor,
+    add_callback,
+)
 
 PINGER_KV_MAX_INCREMENT = 0.5
 HPINGER_KV_MAX = 3.0
@@ -44,6 +49,7 @@ INJ_KICKER_SETTINGS = dict(
 )
 
 FIXED_GUN_SETTINGS = dict(MBM_volt=29.0, grid_volt=59.0)
+
 
 def save_inj_kicker_settings_to_file():
     filepath = Path(f"{datetime.now():%Y%m%dT%H%M%S}_inj_kicker_settings.json")
@@ -269,13 +275,13 @@ def load_pinger_settings_from_file(
             pv.get()
 
 
-
 def set_hpinger_delay_ns(delay_val):
     delay_pv = PVS["HPIN_NS_DELAY_SP"]
 
     if delay_pv.get() != delay_val:
         delay_pv.put(delay_val)
         delay_pv.get()
+
 
 def set_vpinger_delay_ns(delay_val):
     delay_pv = PVS["VPIN_NS_DELAY_SP"]
@@ -294,6 +300,7 @@ def set_vpinger_delay_bucket(pinger_peak_bucket_index):
     delay_val = VPIN_BUCKET0_DELAY_NS + 2 * pinger_peak_bucket_index
     set_vpinger_delay_bucket(delay_val)
 
+
 def set_pinger_plane(new_plane):
     avail_opts = ["", "v", "h", "hv"]
     assert new_plane in avail_opts
@@ -306,9 +313,9 @@ def set_pinger_plane(new_plane):
         plane_sel_pv.put(avail_opts.index(new_plane))
         plane_sel_pv.get()
 
-def setup_kickout_pinger_settings():
 
-    set_pinger_plane('v')
+def setup_kickout_pinger_settings():
+    set_pinger_plane("v")
 
     kwargs_ramp = dict(
         target_vpin_kV=KICKOUT_VPIN_KV,
@@ -322,11 +329,12 @@ def kickout_beam(max_wait=5.0):
 
 
 def kickout_lifetime_bunches(max_wait=5.0):
-    set_vpinger_delay_ns(KICKOUT_VPIN_DELAY_NS['lifetime_bunches'])
+    set_vpinger_delay_ns(KICKOUT_VPIN_DELAY_NS["lifetime_bunches"])
     ping_and_wait_till_fire(max_wait=max_wait)
 
+
 def kickout_inj_eff_bunches(max_wait=5.0):
-    set_vpinger_delay_ns(KICKOUT_VPIN_DELAY_NS['inj_eff_bunches'])
+    set_vpinger_delay_ns(KICKOUT_VPIN_DELAY_NS["inj_eff_bunches"])
     ping_and_wait_till_fire(max_wait=max_wait)
 
 
@@ -442,7 +450,6 @@ def _wait_for_inj_eff_pv_update(ini_timestamp, n_wait=3, sleep=2.0):
 
 
 def change_inj_target_bucket(target_bucket_number):
-
     assert 1 <= target_bucket_number <= 1320
 
     target_bucket_index = target_bucket_number - 1
@@ -459,11 +466,7 @@ def change_inj_target_bucket(target_bucket_number):
         time.sleep(2.0)
 
 
-
-
-def change_gun_settings(
-    gun_enabled, target_bucket_number, cw=False, pulse_width_ns=40
-):
+def change_gun_settings(gun_enabled, target_bucket_number, cw=False, pulse_width_ns=40):
     if cw:
         new_SP = 0
     else:
@@ -484,8 +487,8 @@ def change_gun_settings(
     apply_scalar_pv_change(PVS["gun_enable_SP"], gun_enabled, sleep=1.0)
     assert PVS["gun_enable_RB"].get() == 1  # 0 = disabled; 1 = enabled
 
-def _wait_for_injection(prev_count, max_wait=120.0):
 
+def _wait_for_injection(prev_count, max_wait=120.0):
     t0 = time.perf_counter()
     timed_out = False
     while PVS["count_with_beam"].get() == prev_count:
@@ -497,14 +500,13 @@ def _wait_for_injection(prev_count, max_wait=120.0):
 
     return timed_out
 
-def _inject_up_to(inject_pv, mA_pv, target_mA, second_try_wait=3.0, max_wait=120.0):
 
+def _inject_up_to(inject_pv, mA_pv, target_mA, second_try_wait=3.0, max_wait=120.0):
     restore_good_inj_kicker_settings()
 
     t0 = time.perf_counter()
     timed_out = False
     while mA_pv.get() < target_mA:
-
         ini_count = PVS["count_with_beam"].get()
 
         inject_pv.put(1, wait=True)
@@ -529,26 +531,38 @@ def _inject_up_to(inject_pv, mA_pv, target_mA, second_try_wait=3.0, max_wait=120
 
     return timed_out
 
-def inject_single_shots_up_to(target_dcct_mA, second_try_wait=3.0, max_wait=120.0):
 
+def inject_single_shots_up_to(target_dcct_mA, second_try_wait=3.0, max_wait=120.0):
     mA_pv = PVS["DCCT"]
     inject_pv = PVS["inject"]
 
-    timed_out = _inject_up_to(inject_pv, mA_pv, target_dcct_mA, second_try_wait=second_try_wait, max_wait=max_wait)
+    timed_out = _inject_up_to(
+        inject_pv,
+        mA_pv,
+        target_dcct_mA,
+        second_try_wait=second_try_wait,
+        max_wait=max_wait,
+    )
 
     return timed_out
 
 
 def inject_camshaft_up_to(target_bunch_mA, second_try_wait=3.0, max_wait=120.0):
-
     apply_scalar_pv_change(PVS["camshaft_bucket_index"], 1280, sleep=1.0)
 
     mA_pv = PVS["camshaft_mA"]
     inject_pv = PVS["inject_camshaft"]
 
-    timed_out = _inject_up_to(inject_pv, mA_pv, target_bunch_mA, second_try_wait=second_try_wait, max_wait=max_wait)
+    timed_out = _inject_up_to(
+        inject_pv,
+        mA_pv,
+        target_bunch_mA,
+        second_try_wait=second_try_wait,
+        max_wait=max_wait,
+    )
 
     return timed_out
+
 
 def refill_lifetime_meas_bunches(
     target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list
@@ -556,18 +570,22 @@ def refill_lifetime_meas_bunches(
     MBM_volt = FIXED_GUN_SETTINGS["MBM_volt"]
     grid_volt = FIXED_GUN_SETTINGS["grid_volt"]
 
-    assert len(target_dcct_mA_list) == len(target_bucket_number_list) == len(pulse_width_ns_list)
+    assert (
+        len(target_dcct_mA_list)
+        == len(target_bucket_number_list)
+        == len(pulse_width_ns_list)
+    )
     for target_dcct_mA, target_bucket_number, pulse_width_ns in zip(
-        target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list):
+        target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list
+    ):
         setup_inj_kickers_for_lifetime_meas(
-            target_bucket_number, MBM_volt, grid_volt, pulse_width_ns=pulse_width_ns)
+            target_bucket_number, MBM_volt, grid_volt, pulse_width_ns=pulse_width_ns
+        )
 
         inject_single_shots_up_to(target_dcct_mA, second_try_wait=3.0, max_wait=120.0)
 
 
-def setup_inj_kickers_for_inj_eff_meas(
-    target_bucket_number, pulse_width_ns=40
-):
+def setup_inj_kickers_for_inj_eff_meas(target_bucket_number, pulse_width_ns=40):
     MBM_volt = FIXED_GUN_SETTINGS["MBM_volt"]
     grid_volt = FIXED_GUN_SETTINGS["grid_volt"]
 
@@ -584,9 +602,8 @@ def setup_inj_kickers_for_inj_eff_meas(
 
     restore_poor_inj_kicker_settings()
 
-def setup_inj_kickers_for_lifetime_meas(
-    target_bucket_number, pulse_width_ns=40
-):
+
+def setup_inj_kickers_for_lifetime_meas(target_bucket_number, pulse_width_ns=40):
     MBM_volt = FIXED_GUN_SETTINGS["MBM_volt"]
     grid_volt = FIXED_GUN_SETTINGS["grid_volt"]
 
@@ -653,8 +670,6 @@ def ring_current_to_charge(ring_current_mA, t_rev_second=None):
     charge_nC = (ring_current_mA * 1e-3) * t_rev_second * 1e9
 
     return charge_nC
-
-
 
 
 def reset_callback_data(callback_func):

@@ -32,8 +32,7 @@ SEXT_GROUP2FAM_IND = {
     for k, d in SEXT_PVSP_MAP.items()
 }
 SEXT_FAM2PVS = {
-    fam: [SEXT_GROUP2PV[SEXT_PVSP_MAP[f"{fam}_{i+1}"]["group"]]
-           for i in range(n_kids)]
+    fam: [SEXT_GROUP2PV[SEXT_PVSP_MAP[f"{fam}_{i+1}"]["group"]] for i in range(n_kids)]
     for fam, n_kids in SEXT_FAM2NKIDS.items()
 }
 
@@ -50,8 +49,8 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
         pvs = SEXT_FAM2PVS[family]
     elif family_or_group in SEXT_GROUP2FAM_IND:
         group = family_or_group
-        family = SEXT_GROUP2FAM_IND[group]['family']
-        index = SEXT_GROUP2FAM_IND[group]['index']
+        family = SEXT_GROUP2FAM_IND[group]["family"]
+        index = SEXT_GROUP2FAM_IND[group]["index"]
         pvs = [SEXT_FAM2PVS[family][index]]
     else:
         raise ValueError(f"No match found for 2nd argument: {family_or_group}")
@@ -67,8 +66,8 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
     )
     target_sp_raws = f(target_sp_phy)
 
-    if group is None: # whole family
-        outputs = target_sp_raws # [A]
+    if group is None:  # whole family
+        outputs = target_sp_raws  # [A]
     else:
         outputs = [target_sp_raws[index]]  # [A]
 
@@ -76,13 +75,15 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
 
     return pvs, outputs
 
-def change_sext_strengths(target_sp_phy, family_or_group):
 
+def change_sext_strengths(target_sp_phy, family_or_group):
     """
     target_sp_phy [m^(-2)]
     """
 
-    pvs, new_setpoints_A = convertGroupedSextPhySetpoints(target_sp_phy, family_or_group)
+    pvs, new_setpoints_A = convertGroupedSextPhySetpoints(
+        target_sp_phy, family_or_group
+    )
 
     assert len(pvs) == len(new_setpoints_A)
     for pv, amp in zip(pvs, new_setpoints_A):
@@ -90,7 +91,6 @@ def change_sext_strengths(target_sp_phy, family_or_group):
         pv.get()
 
 
-if __name__ == '__main__':
-
-    base_K2L = 3.962 # [m^(-2)]
-    change_sext_strengths(base_K2L, 'SH1')
+if __name__ == "__main__":
+    base_K2L = 3.962  # [m^(-2)]
+    change_sext_strengths(base_K2L, "SH1")
