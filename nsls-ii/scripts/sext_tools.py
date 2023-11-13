@@ -273,6 +273,16 @@ def make_knob_groups(groups: dict[str, list[str]], knob_matrix: pd.DataFrame, po
         knob_groups[c] = data
     return knob_groups
 
+def knob_strengths_to_group_strengths(knob_matrix: pd.DataFrame, knob_dict: dict[str,float]):
+    """ Take knob dataframe, output per-family strengths """
+    assert len(knob_dict) == knob_matrix.shape[1]
+
+    data = {k:0.0 for k in knob_matrix.index}
+    for c in knob_matrix.columns:        
+        for g in knob_matrix.index:
+            data[g] += knob_matrix.loc[g,c]*knob_dict[c]
+    return data
+
 
 
 
