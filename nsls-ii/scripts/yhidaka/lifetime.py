@@ -24,6 +24,11 @@ REGBPM_SUMSTD_PVS = [
 REGBPM_COUNTS_PVS = [
     PV(f"{prefix}AmplV:Max-I", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
 ]
+# REGBPM_ATTENUATE_PVS = [
+#     PV(f"{prefix}AmplV:Max-I", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
+# ]
+"SR:C01-BI{BPM:1}Gain:RfAtte-I"
+"SR:C01-BI{BPM:1}Gain:RfAtte-SP"
 
 nRegBPM = len(REGBPM_PV_PREFIXES)
 
@@ -33,7 +38,7 @@ ABORT_PV_TIMEOUT = 0.1  # [s]
 SUM_PVS_TIMEOUT = 0.3  # [s]
 DCCT_PV_TIMEOUT = 0.1  # [s]
 
-PV_STRS = json.loads(Path("pvs_lifetime.json").read_text())
+PV_STRS = json.loads((Path(__file__).parent / "pvs_lifetime.json").read_text())
 PVS = {k: PV(pv_str, auto_monitor=False) for k, pv_str in PV_STRS.items()}
 
 # Storage used by callbacks
@@ -134,7 +139,6 @@ def measLifetimeAdaptivePeriod(
     bad_bpm_indexes = np.array([])
 
     moni_pv_keys = ["DCCT_1", "DCCT_2", "DCCT_precise", "eps_x_nm", "eps_y_pm"]
-    moni_pv_keys += [_pv.pvname for _pv in REGBPM_SUM_PVS]
     for k in moni_pv_keys:
         add_callback(PVS[k], callback_append_to_list)
         turn_on_pv_monitor(PVS[k])
@@ -374,15 +378,44 @@ def measLifetimeAdaptivePeriod(
 
     out["moni_data"] = moni_data
 
+    if False:
+        axes = []
+        for k in moni_pv_keys:
+            t = moni_data[k]["timestamp"]
+            if (k == "DCCT_1") or (not k.startswith("DCCT_")):
+                plt.figure()
+                axes.append(plt.gca())
+                if k == "DCCT_1":
+                    title = "DCCT"
+                else:
+                    title = k
+                plt.title(title)
+            plt.plot(t - t[0], moni_data[k]["value"], ".-", label=k)
+        for ax in axes:
+            plt.sca(ax)
+            plt.legend(loc="best")
+
+        plt.figure()
+        for k, v in moni_data.items():
+            if k.startswith("sum_C"):
+                k_std = k.replace("sum_", "sumstd_")
+                t = v["timestamp"]
+                I = v["value"]
+                t_std = moni_data[k_std]["timestamp"]
+                I_std = moni_data[k_std]["value"]
+
+                plt.plot(t - t[0], I / I[0], ".-")
+
     return out
 
 
 if __name__ == "__main__":
     out = measLifetimeAdaptivePeriod(
         max_wait=120.0,
-        update_period=1.0,
+        update_period=0.5,  # 1.0,
         sigma_cut=3.0,
-        sum_diff_thresh_fac=20.0,  # 10.0, #5.0,
+        sum_diff_thresh_fac=10.0,  # 5.0,
+        min_samples=5,
         abort_pv=None,
         mode="online",
         min_dcct_mA=0.2,
