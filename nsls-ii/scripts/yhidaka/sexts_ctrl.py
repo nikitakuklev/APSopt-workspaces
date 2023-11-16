@@ -8,13 +8,13 @@ from scipy.interpolate import interp1d
 from epics import PV
 
 UNITCONV = {}
-with h5py.File(Path("unitconv_grouped_sexts.h5"), "r") as f:
+with h5py.File((Path(__file__).parent / "unitconv_grouped_sexts.h5"), "r") as f:
     for fam in list(f):
         UNITCONV[fam] = dict(
             phy=f[fam]["target_mean_ap_b2"][()], raw=f[fam]["current_A"][()]
         )
 
-SEXT_PVSP_MAP = json.loads(Path("sext_pvsp_map.json").read_text())
+SEXT_PVSP_MAP = json.loads((Path(__file__).parent / "sext_pvsp_map.json").read_text())
 _sext_fam_series_indexes = defaultdict(list)
 for k in list(SEXT_PVSP_MAP):
     fam, series_num_str = k.split("_")
@@ -92,5 +92,28 @@ def change_sext_strengths(target_sp_phy, family_or_group):
 
 
 if __name__ == "__main__":
-    base_K2L = 3.962  # [m^(-2)]
-    change_sext_strengths(base_K2L, "SH1")
+    base_K2L = {}
+    base_K2L["SH1"] = 3.9666635820091023  # [m^(-2)]
+    base_K2L["SM1A"] = -4.7793535935570315
+    base_K2L["SM1B"] = -5.224932910164227
+    base_K2L["SM2B"] = 7.164374888638177
+
+    L = {}
+    L["SM1A"] = 0.2
+    L["SM1B"] = 0.2
+    L["SM2B"] = 0.25
+
+    if False:
+        family = "SH1"
+        new_K2L = base_K2L[family] * 1.0
+        change_sext_strengths(new_K2L, family)
+
+    if False:
+        family = "SM1A"
+        new_K2L = base_K2L[family] * 1.0
+        change_sext_strengths(new_K2L, family)
+    else:
+        null_K2s = np.array([-0.6637, 0.7448, -0.0692])
+        scaling = 0.0  # 5.0
+        for family, null_dK2 in zip(["SM1A", "SM1B", "SM2B"], null_K2s):
+            new_K2L = base_K2L[family] + null_dK2 * L[family] * scaling

@@ -31,7 +31,9 @@ if USE_PYEPICS:
 else:
     PVS = PV_STRS
 
-OPS = json.loads(Path("20231108T114817_BxB_ops_conditions.json").read_text())
+OPS = json.loads(
+    (Path(__file__).parent / "20231108T114817_BxB_ops_conditions.json").read_text()
+)
 
 
 def capture_ops_conditions():
@@ -88,10 +90,14 @@ def _change_BxB_feedback_state(plane, on):
         desired = 0
 
     Plane = plane.upper()
-    if caget(OPS[f"BBFB_{Plane}_RB"]["pv"]) == non_desired:
-        caput(OPS[f"BBFB_{Plane}_SP"]["pv"], desired, wait=True)
-        time.sleep(1.0)
-        assert caget(OPS[f"BBFB_{Plane}_RB"]["pv"]) == desired
+
+    if PVS[f"BBFB_{Plane}_RB"].get() == non_desired:
+        PVS[f"BBFB_{Plane}_SP"].put(desired, wait=True)
+        while True:
+            if PVS[f"BBFB_{Plane}_RB"].get() != desired:
+                time.sleep(0.1)
+            else:
+                break
 
 
 def turn_on_BxB_feedback():
@@ -272,3 +278,7 @@ if __name__ == "__main__":
         plt.xlabel("x [mm]")
 
         plt.show()
+
+if __name__ == "__main__":
+    # turn_off_BxB_feedback()
+    turn_on_BxB_feedback()
