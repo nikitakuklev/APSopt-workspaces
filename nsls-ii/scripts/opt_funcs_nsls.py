@@ -6,8 +6,9 @@ def make_dummy_eval(gvocs):
       assert len(inputs_dict) == len(gvocs.variables)
       vals = np.array(list(inputs_dict.values()))
       lt = 10 - 5*np.sum((vals-0.4)**2) + np.random.randn()*0.2
-      eff = np.sum((vals)) + np.random.randn()*0.05
-      return {'LT': lt, 'EFF': eff}
+      eff = 100*np.sum((vals)) + np.random.randn()*0.05
+      extras = {k: np.random.randn() for k in ['_nux', '_nuy', '_eps_x_bxbOn', '_eps_y_bxbOn']}
+      return {'LT': lt, 'EFF': eff, **extras}
    
    return master_eval_function_dummy
 
@@ -18,7 +19,8 @@ def make_dummy_eval_lifetime(gvocs):
       assert len(inputs_dict) == len(gvocs.variables)
       vals = np.array(list(inputs_dict.values()))
       lt = 10 - 5*np.sum((vals-0.4)**2) + np.random.randn()*0.2
-      return {'LT': lt}
+      extras = {k: np.random.randn() for k in ['_nux', '_nuy', '_eps_x_bxbOn', '_eps_y_bxbOn']}
+      return {'LT': lt, **extras}
    
    return master_eval_function_dummy
 
