@@ -67,24 +67,55 @@ def analyze_lifetime_normalization_data():
 
 
 def apply_sextupole_changes(inputs_dict):
-    for family, K2L in inputs_dict.items():
-        sexts_ctrl.change_sext_strengths(K2L, family)
+    tStart = time.perf_counter()
 
-    time.sleep(3.0)  # TOFIX: check RB-SP diff
+    if False:
+        for family, K2L in inputs_dict.items():
+            sexts_ctrl.change_sext_strengths(
+                K2L,
+                family,
+                max_dI=2.0,
+                step_wait=1.0,
+                wait_small_SP_RB_diff=False,
+                max_SP_RB_dI=0.05,
+            )  # TO-ADJUST
+    else:
+        K2L_list = []
+        family_list = []
+        for family, K2L in inputs_dict.items():
+            K2L_list.append(K2L)
+            family_list.append(family)
+        sexts_ctrl.change_sext_strengths(
+            K2L_list, family_list, max_dI=1.0, step_wait=1.0
+        )  # TO-ADJUST
+
+    print(f"Sextupole adj. took {time.perf_counter()-tStart:.1f}.")
+
+    # time.sleep(3.0)
+    time.sleep(1.0)
 
 
-def setup_for_orbit_correction():
-    """Set current SA orbit as reference orbit for SOFB
-    => TOFIX: I need to set to BBA orbit
-    """
-    PVS["SOFB_ref_orb_reset"].put(1)
-    PVS["SOFB_ref_orb_reset"].get()
+def setup_for_orbit_correction(bba_ref=True, use_adaptive=True):
+    """Set reference orbit and other settings for SOFB"""
 
-    apply_scalar_pv_change(PVS["SOFB_cor_frac"], 0.10)
-    apply_scalar_pv_change(PVS["SOFB_adaptive"], 0.0)
+    if not bba_ref:
+        pv = PVS["SOFB_ref_orb_reset"]
+    else:
+        pv = PVS["SOFB_ref_orb_zero"]
+    pv.get()
+
+    if not use_adaptive:
+        apply_scalar_pv_change(PVS["SOFB_cor_frac"], 0.10)
+        apply_scalar_pv_change(PVS["SOFB_adaptive"], 0)
+    else:
+        apply_scalar_pv_change(PVS["SOFB_adaptive"], 1)
 
 
 def turn_on_SOFB():
+    if lifetime.PVS["DCCT_1"].get() < 1.0:
+        print("WARNING: No beam. Not turning on SOFB")
+        return
+
     if PVS["SOFB_enabled"].get() != 1:
         print("SOFB not enabled yet. Enabling now!")
         PVS["SOFB_turn_on"].put(1)
@@ -120,20 +151,32 @@ def correct_orbit(SOFB_off_on_exit, dx_rms_thresh=2e-6, dy_rms_thresh=2e-6):
         turn_off_SOFB()
 
 
+def _change_tune_feedback_status(turn_on):
+    if turn_on:
+        if PVS["tune_fb_enabled"].get() == 0:
+            PVS["tune_fb_ena_set_1"].put(1)
+
+            # The value you caput here doesn't matter. It always caput's the value of 1.
+            # Without this caput, the feedback will not turn on.
+            PVS["tune_fb_ena_set_2"].put(1)
+
+            while PVS["tune_fb_enabled"].get() == 0:  # Wait unitl it turns on
+                time.sleep(0.2)
+    else:
+        if PVS["tune_fb_enabled"].get() == 1:
+            PVS["tune_fb_ena_set_1"].put(0)
+            # Unlike the "turn-on" case, you don't have to caput PVS["tune_fb_ena_set_2"].
+
+            while PVS["tune_fb_enabled"].get() == 1:  # Wait unitl it turns off
+                time.sleep(0.2)
+
+
 def turn_on_tune_feedback():
-    while PVS["tune_fb_enabled"].get() == 0:
-        PVS["tune_fb_ena_set"].put(1)
-        PVS["tune_fb_ena_set"].get()
-        time.sleep(3.0)
+    _change_tune_feedback_status(True)
 
 
 def turn_off_tune_feedback():
-    return  # TOFIX
-
-    while PVS["tune_fb_enabled"].get() == 1:
-        PVS["tune_fb_ena_set"].put(0)
-        PVS["tune_fb_ena_set"].get()
-        time.sleep(3.0)
+    _change_tune_feedback_status(False)
 
 
 def setup_for_tune_correction():
@@ -163,13 +206,49 @@ def cleanup_for_tune_correction():
     PVS["nuy_SP"].get()
 
 
+def _wait_for_bxb_tune_pv_update():
+    rb_d = {k: PVS[k].get() for k in ["nux_RB", "nuy_RB"]}
+    prev_rb_ts_d = {k: PVS[k].timestamp for k in list(rb_d)}
+
+    rb_pv_updated = {k: False for k in list(rb_d)}
+
+    print("Waiting for BxB tune PVs to update...", end=" ")
+    while True:
+        for k, _updated in rb_pv_updated.items():
+            if not _updated:
+                rb_d[k] = PVS[k].get()
+                new_ts = PVS[k].timestamp
+                if new_ts != prev_rb_ts_d[k]:
+                    prev_rb_ts_d[k] = new_ts
+                    rb_pv_updated[k] = True
+
+        if all(list(rb_pv_updated.values())):
+            break
+        else:
+            time.sleep(0.2)
+    print("Done")
+
+    return rb_d
+
+
 def correct_tunes(dnu_thresh=2e-3):
-    while (np.abs(PVS["nux_RB"].get() - PVS["nux_SP"].get()) > dnu_thresh) or (
-        np.abs(PVS["nuy_RB"].get() - PVS["nuy_SP"].get()) > dnu_thresh
-    ):
-        PVS["cor_tunes"].put(1)
-        PVS["cor_tunes"].get()
-        time.sleep(4.0)
+    pv_d = {k: PVS[k] for k in ["nux_RB", "nux_SP", "nuy_RB", "nuy_SP"]}
+
+    sp_d = {k: PVS[k].get() for k in ["nux_SP", "nuy_SP"]}
+
+    while True:
+        rb_d = _wait_for_bxb_tune_pv_update()
+
+        if (np.abs(rb_d["nux_RB"] - sp_d["nux_SP"]) < dnu_thresh) and (
+            np.abs(rb_d["nuy_RB"] - sp_d["nuy_SP"]) < dnu_thresh
+        ):
+            break
+        else:
+            PVS["cor_tunes"].put(1)
+            time.sleep(1.0)
+
+            while PVS["cor_tunes"].get() == 1:
+                time.sleep(0.2)
 
 
 def setup_for_chrom_meas():
@@ -288,14 +367,32 @@ def prep_for_optim():
     injection.FIXED_GUN_SETTINGS["grid_volt"] = 59.0
 
     target_dcct_mA_list = [10.0, 20.0]
-    target_bucket_number_list = [1300, 20]  # [1281, 0]
-    pulse_width_ns_list = [40.0, 40.0]
+    # target_bucket_number_list = [1300, 20]  # [1281, 0]
+    target_bucket_number_list = [1300 - 5, 20 + 5]
+    # pulse_width_ns_list = [40.0, 40.0]
+    pulse_width_ns_list = [50.0, 50.0]
     injection.refill_lifetime_meas_bunches(
         target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list
     )
 
+    # TODO: Do lattice correction with the actual fill pattern, not <2 mA
 
-def master_eval_function(inputs_dict):
+    # TODO: Set chrom to +3/+3
+    # TODO: Add vertical dispersion to 15 pm
+
+    # TODO: Set right BPM attenuattion (20-dB)
+
+    # TODO: add automatic refill when beam is too low or just pring WARNING
+
+    # TODO: lifetime -> add "max_samples" (or use "max_wait")
+
+    # TODO: Restore all settings after the shift (RF freq, DCCT range,
+    # tune FB target tunes, BBF soft trig., etc.)
+
+
+def master_eval_function(
+    inputs_dict, meas_bxb_tunes=False, meas_lifetime=False, meas_inj_eff=False
+):
     """Evaluation function that maps variables to objectives
 
     Bucket index starts from 0, not 1.
@@ -331,10 +428,10 @@ def master_eval_function(inputs_dict):
        `injection.save_inj_kicker_settings_to_file()`
     *) Put camshaft at Bucket 1280 to 0.4 mA
     *) Turn on bunch-by-bunch (BxB) feedback
-    *) Turn on tune feedback [TODO: function not working]
+    *) Turn on tune feedback
     *) Inject 20 mA of "lifetime bunches"
     *) Set SOFB refence orbit to BBA values and set other SOFB settings
-      - Call `setup_for_orbit_correction()`
+      - Call `setup_for_orbit_correction(bba_ref=True, use_adaptive=True)`
     *) Turn on SOFB (high cor.frac, but not too high to slip away from target tunes)
     *) Adjust RF frequency to bring horizontal corrector sum to ~162 A (was ~174 A before).
     *) Adjust ROI and exposure time of the BMA pinhole camera
@@ -420,6 +517,8 @@ def master_eval_function(inputs_dict):
 
     """
 
+    outputs = {}
+
     # Set sextupoles
     logger.info(f"Setting sextupoles to {inputs_dict}")
 
@@ -436,20 +535,28 @@ def master_eval_function(inputs_dict):
     SOFB_off_on_exit = False
     correct_orbit(SOFB_off_on_exit, dx_rms_thresh=10e-6, dy_rms_thresh=10e-6)
 
-    turn_on_BxB_feedback()
+    if meas_bxb_tunes:
+        turn_on_BxB_feedback()
 
-    time.sleep(2.0)
-    res = meas_beam_props_w_bxb_on(duration=1.0)
-    nux = res["nux_RB_avg"]
-    nuy = res["nuy_RB_avg"]
-    res["eps_x_nm_avg"] *= 1e-9  # converte [nm] to [m]
-    res["eps_y_pm_avg"] *= 1e-12  # converte [pm] to [m]
-    eps_x_bxbOn = res["eps_x_nm_avg"]
-    eps_y_bxbOn = res["eps_y_pm_avg"]
+        time.sleep(2.0)
 
-    turn_off_BxB_feedback()
+        res = meas_beam_props_w_bxb_on(duration=1.0)
 
-    if True:
+        nux = res["nux_RB_avg"]
+        nuy = res["nuy_RB_avg"]
+        outputs["_nux"] = nux
+        outputs["_nuy"] = nuy
+
+        res["eps_x_nm_avg"] *= 1e-9  # converte [nm] to [m]
+        res["eps_y_pm_avg"] *= 1e-12  # converte [pm] to [m]
+        eps_x_bxbOn = res["eps_x_nm_avg"]
+        eps_y_bxbOn = res["eps_y_pm_avg"]
+        outputs["_eps_x_bxbOn"] = eps_x_bxbOn
+        outputs["_eps_y_bxbOn"] = eps_y_bxbOn
+
+        turn_off_BxB_feedback()
+
+    if meas_lifetime:
         # Lifetime
         logger.info("Lifetime measurement START")
         t0 = time.perf_counter()
@@ -464,11 +571,18 @@ def master_eval_function(inputs_dict):
                 mode="online",
                 min_dcct_mA=0.2,
             )
-            objective_lifetime = res["avg"]
+
+            raw_tau_hr = res["avg"]
+
+            # objective_lifetime = res["avg"]
+            objective_lifetime = res["norm_tau"]
 
             tau_suppl = res["moni_data"]
-            eps_y_bxbOff = tau_suppl["eps_y_pm"]["value"] * 1e-12
-            if np.max(eps_y_bxbOff) > 30e-12:
+            eps_x_bxbOff = np.median(tau_suppl["eps_x_nm"]["value"]) * 1e-9
+            eps_y_bxbOff = np.median(tau_suppl["eps_y_pm"]["value"]) * 1e-12
+            outputs["_eps_x_bxbOff"] = eps_x_bxbOff
+            outputs["_eps_y_bxbOff"] = eps_y_bxbOff
+            if eps_y_bxbOff > 30e-12:
                 print("* eps_y too large! Lifetime value set to NaN.")
                 objective_lifetime = np.nan
         except:
@@ -476,13 +590,20 @@ def master_eval_function(inputs_dict):
             logger.error("Lifetime calc failed")
             logger.error(f"{traceback.format_exc()}")
             objective_lifetime = np.nan
+            raw_tau_hr = np.nan
+            eps_y_bxbOff = np.nan
         print(
-            f"Lifetime = {objective_lifetime:.1f} (took {time.perf_counter()-t0:.1f} [s])"
+            f"Lifetime = {objective_lifetime:.3f} (raw tau [hr] = {raw_tau_hr:.3f}, epsy [pm] = {eps_y_bxbOff*1e12:.2f}) (took {time.perf_counter()-t0:.1f} [s])"
         )
 
-    turn_off_SOFB()
+        outputs["LT"] = objective_lifetime
+        outputs["_raw_LT"] = res["avg"]
 
-    if True:
+        # outputs["_tau_suppl_data"] = tau_suppl
+
+    # turn_off_SOFB()
+
+    if meas_inj_eff:
         # Injection efficiency
         logger.info("Efficiency measurement START")
         t0 = time.perf_counter()
@@ -499,31 +620,12 @@ def master_eval_function(inputs_dict):
             f"Inj. Eff. = {objective_eff:.2f} (took {time.perf_counter()-t0:.1f} [s])"
         )
 
-        print("Eval. func. finished.")
-        sys.stdout.flush()
+        outputs["EFF"] = objective_eff
 
-        return {
-            "LT": objective_lifetime,
-            "EFF": objective_eff,
-            "_nux": nux,
-            "_nuy": nuy,
-            "_eps_x_bxbOn": eps_x_bxbOn,
-            "_eps_y_bxbOn": eps_y_bxbOn,
-            # "_tau_suppl_data": tau_suppl,
-        }
+    print("Eval. func. finished.")
+    sys.stdout.flush()
 
-    else:
-        print("Eval. func. finished.")
-        sys.stdout.flush()
-
-        return {
-            "LT": objective_lifetime,
-            "_nux": nux,
-            "_nuy": nuy,
-            "_eps_x_bxbOn": eps_x_bxbOn,
-            "_eps_y_bxbOn": eps_y_bxbOn,
-            # "_tau_suppl_data": tau_suppl,
-        }
+    return outputs
 
 
 if __name__ == "__main__":
@@ -537,13 +639,16 @@ if __name__ == "__main__":
         meas_beam_props_w_bxb_on(duration)
 
     elif False:
-        setup_for_tune_correction()
+        # turn_off_tune_feedback()
+        # turn_on_tune_feedback()
 
-        # turn_on_tune_feedback() # TODO: not working
+        correct_tunes(1e-6)
 
     elif False:
-        # TOFIX: set ref to BBA
-        setup_for_orbit_correction()
+        setup_for_tune_correction()
+
+    elif False:
+        setup_for_orbit_correction(bba_ref=True, use_adaptive=True)
 
     elif False:
         # TOFIX
@@ -554,11 +659,29 @@ if __name__ == "__main__":
         prep_for_optim()
 
     elif True:
-        inputs_dict = json.loads(
-            Path(
-                "/nsls2/users/yhidaka/git_repos/APSopt-workspaces/nsls-ii/scripts/test_inputs.json"
-            ).read_text()
-        )
-        # inputs_dict['SM2'] = inputs_dict['SM2B']
-        # del inputs_dict['SM2B']
-        master_eval_function(inputs_dict)
+        # turn_off_BxB_feedback()
+        turn_on_BxB_feedback()
+
+    elif True:
+        if False:
+            inputs_dict = json.loads(
+                Path(
+                    "/nsls2/users/yhidaka/git_repos/APSopt-workspaces/nsls-ii/scripts/test_inputs.json"
+                ).read_text()
+            )
+            # inputs_dict['SM2'] = inputs_dict['SM2B']
+            # del inputs_dict['SM2B']
+
+        inputs_dict = {
+            "SL1": -2.8533953007500004,
+            "SL2": 6.6004154682500005,
+            "SL3": -6.334085031150001,
+            "SH1": 3.6690887385,
+            "SH3": -1.25884830815,
+            "SH4": -3.40149365265,
+            "SM1A": -4.27066061076,
+            "SM1B": -5.48713351964,
+            "SM2B": 7.295418874749999,
+        }
+
+        master_eval_function(inputs_dict, meas_lifetime=True)

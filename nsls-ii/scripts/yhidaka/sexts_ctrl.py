@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 from collections import defaultdict
+import time
 
 import numpy as np
 import h5py
@@ -36,6 +37,11 @@ SEXT_FAM2PVS = {
     for fam, n_kids in SEXT_FAM2NKIDS.items()
 }
 
+SEXT_SPPVNAME2RBPVS = {
+    pv.pvname: PV(pv.pvname.replace(":Sp1-SP", ":Ps1DCCT1-I"), auto_monitor=False)
+    for pv in SEXT_GROUP2PV.values()
+}
+
 
 def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
     """
@@ -55,7 +61,7 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
     else:
         raise ValueError(f"No match found for 2nd argument: {family_or_group}")
 
-    f = interp1d(
+    interp_func = interp1d(
         UNITCONV[family]["phy"],
         UNITCONV[family]["raw"],
         kind="linear",
@@ -64,7 +70,7 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
         bounds_error=True,
         fill_value=np.nan,
     )
-    target_sp_raws = f(target_sp_phy)
+    target_sp_raws = interp_func(target_sp_phy)
 
     if group is None:  # whole family
         outputs = target_sp_raws  # [A]
@@ -76,19 +82,93 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
     return pvs, outputs
 
 
-def change_sext_strengths(target_sp_phy, family_or_group):
+# def change_sext_strengths(target_sp_phy, family_or_group, max_dI=1.0, step_wait=2.0,
+#                           wait_small_SP_RB_diff=False, max_SP_RB_dI=0.05):
+#     """
+#     target_sp_phy [m^(-2)]
+#     """
+
+#     assert max_dI > 0.0
+#     assert step_wait >= 0.0
+
+#     if wait_small_SP_RB_diff:
+#         assert max_SP_RB_dI > 0.0
+#         max_wait = 30.0 # [s]
+
+#     setpoint_pvs, new_setpoints_A = convertGroupedSextPhySetpoints(
+#         target_sp_phy, family_or_group
+#     )
+
+#     new_setpoints_A = np.array(new_setpoints_A)
+#     cur_setpoints_A = np.array([pv.get() for pv in setpoint_pvs])
+
+#     diff_A = new_setpoints_A - cur_setpoints_A
+#     nsteps = int(np.ceil(np.max(np.abs(diff_A)) / max_dI))
+
+#     readback_pvs = [SEXT_SPPVNAME2RBPVS[_pv.pvname] for _pv in setpoint_pvs]
+
+#     for iStep in range(nsteps):
+
+#         new_As = cur_setpoints_A + diff_A * (iStep + 1) / nsteps
+
+#         for _pv, amp in zip(setpoint_pvs, new_As):
+#             _pv.put(amp)
+#         for _pv in setpoint_pvs:
+#             _pv.get()
+
+#         if iStep != nsteps - 1:
+#             if not wait_small_SP_RB_diff:
+#                 time.sleep(step_wait)
+#             else:
+#                 t_wait_start = time.perf_counter()
+#                 while time.perf_counter() - t_wait_start < max_wait:
+#                     cur_As = np.array([_pv.get() for _pv in readback_pvs])
+#                     diff_As = new_As - cur_As
+#                     if np.max(np.abs(diff_As)) < max_SP_RB_dI:
+#                         break
+#                     else:
+#                         time.sleep(0.3)
+
+
+def change_sext_strengths(
+    target_sp_phy_list, family_or_group_list, max_dI=1.0, step_wait=2.0
+):
     """
     target_sp_phy [m^(-2)]
     """
 
-    pvs, new_setpoints_A = convertGroupedSextPhySetpoints(
-        target_sp_phy, family_or_group
-    )
+    assert max_dI > 0.0
+    assert step_wait >= 0.0
 
-    assert len(pvs) == len(new_setpoints_A)
-    for pv, amp in zip(pvs, new_setpoints_A):
-        pv.put(amp)
-        pv.get()
+    new_setpoints_A_list = []
+    cur_setpoints_A_list = []
+    setpoint_pvs_list = []
+
+    for target_sp_phy, family_or_group in zip(target_sp_phy_list, family_or_group_list):
+        setpoint_pvs, new_setpoints_A = convertGroupedSextPhySetpoints(
+            target_sp_phy, family_or_group
+        )
+
+        new_setpoints_A_list.extend(new_setpoints_A)
+        cur_setpoints_A_list.extend([pv.get() for pv in setpoint_pvs])
+        setpoint_pvs_list.extend(setpoint_pvs)
+
+    new_setpoints_A = np.array(new_setpoints_A_list)
+    cur_setpoints_A = np.array(cur_setpoints_A_list)
+
+    diff_A = new_setpoints_A - cur_setpoints_A
+    nsteps = int(np.ceil(np.max(np.abs(diff_A)) / max_dI))
+
+    for iStep in range(nsteps):
+        new_As = cur_setpoints_A + diff_A * (iStep + 1) / nsteps
+
+        for _pv, amp in zip(setpoint_pvs_list, new_As):
+            _pv.put(amp)
+        for _pv in setpoint_pvs_list:
+            _pv.get()
+
+        if iStep != nsteps - 1:
+            time.sleep(step_wait)
 
 
 if __name__ == "__main__":

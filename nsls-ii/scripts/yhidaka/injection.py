@@ -526,12 +526,14 @@ def _inject_up_to(
         ini_count = PVS["count_with_beam"].get()
 
         inject_pv.put(1, wait=True)
+        # inject_pv.put(1)
         inject_pv.get()
 
         inj_timed_out = _wait_for_injection(ini_count, max_wait=second_try_wait)
 
         if inj_timed_out:
             inject_pv.put(1, wait=True)
+            # inject_pv.put(1)
             inject_pv.get()
 
             inj_timed_out = _wait_for_injection(ini_count, max_wait=second_try_wait)
@@ -576,7 +578,11 @@ def inject_single_shots_up_to(
 def inject_camshaft_up_to(
     target_bunch_mA, slee_after_inj=1.0, second_try_wait=3.0, max_wait=120.0
 ):
-    # TOFIX: Make sure to enable gun
+    # Make sure to enable gun
+    orig_gun_state = PVS["gun_enable_RB"].get()
+    if orig_gun_state == 0:  # 0 = disabled; 1 = enabled
+        apply_scalar_pv_change(PVS["gun_enable_SP"], 1, sleep=1.0)
+        assert PVS["gun_enable_RB"].get() == 1
 
     apply_scalar_pv_change(PVS["camshaft_bucket_index"], 1280, sleep=1.0)
 
@@ -593,6 +599,10 @@ def inject_camshaft_up_to(
         second_try_wait=second_try_wait,
         max_wait=max_wait,
     )
+
+    if orig_gun_state == 0:  # 0 = disabled; 1 = enabled
+        apply_scalar_pv_change(PVS["gun_enable_SP"], 0, sleep=1.0)
+        assert PVS["gun_enable_RB"].get() == 0
 
     return timed_out
 
@@ -883,8 +893,10 @@ if __name__ == "__main__":
 
         # target_dcct_mA_list = [10.0, 20.0]
         target_dcct_mA_list = [7.5, 15.0]
-        target_bucket_number_list = [1300, 20]  # [1281, 0]
-        pulse_width_ns_list = [40.0, 40.0]
+        # target_bucket_number_list = [1300, 20]  # [1281, 0]
+        target_bucket_number_list = [1300 - 5, 20 + 5]
+        # pulse_width_ns_list = [40.0, 40.0]
+        pulse_width_ns_list = [50.0, 50.0]
         refill_lifetime_meas_bunches(
             target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list
         )

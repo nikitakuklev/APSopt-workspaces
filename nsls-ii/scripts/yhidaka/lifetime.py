@@ -141,9 +141,11 @@ def measLifetimeAdaptivePeriod(
     moni_pv_keys = ["DCCT_1", "DCCT_2", "DCCT_precise", "eps_x_nm", "eps_y_pm"]
     for k in moni_pv_keys:
         add_callback(PVS[k], callback_append_to_list)
+        CB_DATA[PVS[k].pvname].clear()
         turn_on_pv_monitor(PVS[k])
     for _pv in REGBPM_SUM_PVS + REGBPM_SUMSTD_PVS:
         add_callback(_pv, callback_append_to_list)
+        CB_DATA[_pv.pvname].clear()
         turn_on_pv_monitor(_pv)
 
     N_samples = int(np.ceil(float(max_wait) / float(update_period)))
@@ -365,6 +367,7 @@ def measLifetimeAdaptivePeriod(
     for k in moni_pv_keys:
         pvname = PV_STRS[k]
         moni_data[k] = {k2: np.array(v2) for k2, v2 in CB_DATA[pvname].items()}
+        # print(f"size: moni_data['{k}'] = {{k2: len(v2) for k2, v2 in CB_DATA[pvname].items()}}")
     for _pv in REGBPM_SUM_PVS:
         pvname = _pv.pvname
         cell_str, bpm_num_str = re.match("SR:(C\d\d)-BI\{BPM:(\d)\}", pvname).groups()
@@ -377,6 +380,19 @@ def measLifetimeAdaptivePeriod(
         moni_data[k] = {k2: np.array(v2) for k2, v2 in CB_DATA[pvname].items()}
 
     out["moni_data"] = moni_data
+
+    avg_dcct_mA = np.mean(moni_data["DCCT_1"]["value"])
+    ref_dcct_mA = 20.0
+
+    eps_x_bxbOff = np.median(moni_data["eps_x_nm"]["value"]) * 1e-9
+    eps_y_bxbOff = np.median(moni_data["eps_y_pm"]["value"]) * 1e-12
+    ref_eps_x = 2e-9
+    ref_eps_y = 15e-12
+
+    out["norm_tau"] = out["avg"] * ((avg_dcct_mA / ref_dcct_mA) ** (2 / 3))
+
+    # out["norm_tau"] /= (eps_x_bxbOff / ref_eps_x) * np.sqrt(eps_y_bxbOff / ref_eps_y)
+    out["norm_tau"] /= np.sqrt(eps_y_bxbOff / ref_eps_y)
 
     if False:
         axes = []
