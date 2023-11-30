@@ -1,0 +1,31 @@
+15:44
+15pm ey spoiled using vertical dispersion
+corrected chroma to +3/+3
+extended fill pattern to 50ns x 2, 20mA total current
+
+19:00
+Saved LT run, getting anomalously high emittance? 
+
+19:24
+Could not go back to 8pm lattice, settled for restoring at 12pm and then spoiling again
+
+20:10
+Running MOBO
+
+20:31
+Sampled initial point in mobo run with 85% efficiency
+
+20:38
+Saved mobo run 1
+
+20:58
+Saved mobo run 2
+
+21:25
+Saved mobo run 3
+
+21:40
+Fixed lifetime calculation
+
+22:07
+Mobo run4 fixed, nominal last point
