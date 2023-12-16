@@ -55,10 +55,10 @@ MODES = {'BARE_SH1P12345_SH3P12345_SH4P12345_SL1_SL2_SL3_SVD0':19,# 5+5+5+3+1 = 
          'BARE_SH1P12345_SH3P12345_SH4_SL1_SL2_SL3':14,
          'BARE_SH1P12345_SH3_SH4_SL1_SL2_SL3_SVD0':11, # 5+1+1+3+1 = 11
          'BARE_SH1_SH3_SH4_SL1_SL2_SL3_SVD0':7, # 1+1+1+3+1 = 7
-         'DW_SH1P12345_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828_SVD0':20, # 5+1+1+1+1+1+3+3+3+1 = 20
-         'DW_SH1P12345_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828':19,
-         'DW_SH1_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828_SVD0':16, # 1+1+1+1+1+1+3+3+3+1 = 16
-         'DW_SH1_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828': 15,
+         'DW_SH1P12345_SH3N_SH4N_SL1N_SL2N_SL3N_SH1DW081828_SH3DW081828_SH4DW081828_SVD0':20, # 5+1+1+1+1+1+3+3+3+1 = 20
+         'DW_SH1P12345_SH3N_SH4N_SL1N_SL2N_SL3N_SH1DW081828_SH3DW081828_SH4DW081828':19,
+         'DW_SH1N_SH3N_SH4N_SL1N_SL2N_SL3N_SH1DW081828_SH3DW081828_SH4DW081828_SVD0':16, # 1+1+1+1+1+1+3+3+3+1 = 16
+         'DW_SH1N_SH3N_SH4N_SL1N_SL2N_SL3N_SH1DW081828_SH3DW081828_SH4DW081828': 15,
          }
 
 MODE_GROUPS = {}
@@ -68,6 +68,8 @@ for m,cnt in MODES.items():
     for p in parts:
         if p in ['SH1','SH3','SH4','SL1','SL2','SL3']:
             groups.append(p)
+        elif p in ['SH1N','SH3N','SH4N','SL1N','SL2N','SL3N']:
+            groups.append(p)
         elif p == 'SVD0':
             groups.append(p)
         elif p.endswith('P12345'):
@@ -76,7 +78,7 @@ for m,cnt in MODES.items():
             groups.extend(f"{p.split('DW081828')[0]}-DW{i:02d}" for i in [8,18,28])
     
     MODE_GROUPS[m] = groups
-    assert len(groups) == cnt, f'{m} {groups} {cnt}'
+    assert len(groups) == cnt, f'{m} {groups} {len(groups)} {cnt}'
 
 PENTANT_NUMBERS = {1:[23,24,25,26,27,28],
                    2:[29,30,1,2,3,4],
@@ -149,9 +151,12 @@ def get_initial_values_ref(mode):
         raise Exception(f'Unknown mode {mode}')
     vals = {}
     for g in MODE_GROUPS[mode]:
-        if g in ivals:
-            vals[g] = ivals[g]
-        elif g  == 'SVD0':
+        gname = g
+        if gname in ['SH1N','SH3N','SH4N','SL1N','SL2N','SL3N']:
+            gname = gname[:-1]
+        if gname in ivals:
+            vals[g] = ivals[gname]
+        elif gname  == 'SVD0':
             for sg in ['SM1A', 'SM1B', 'SM2B']:
                 vals[sg] = ivals[sg]
         else:

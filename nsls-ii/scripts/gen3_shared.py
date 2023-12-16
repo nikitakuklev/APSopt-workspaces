@@ -12,8 +12,10 @@ def prepare(MODE):
 
     # CHANGE THIS TO VALUES FROM RING IF NEEDED
     initial_values = initial_values_ref.copy()
-    initial_values['SM1A'] *= 1.0
-    initial_values['SM1B'] *= 1.0
+    if 'SM1A' in initial_values:
+        initial_values['SM1A'] *= 1.0
+    if 'SM1B' in initial_values:
+        initial_values['SM1B'] *= 1.0
 
     # optimizer variables in units of K2L
     variables_list = st.MODE_GROUPS[MODE]
