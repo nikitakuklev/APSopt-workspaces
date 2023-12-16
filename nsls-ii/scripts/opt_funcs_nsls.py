@@ -1,9 +1,13 @@
 import numpy as np
+import sext_tools
+
+VALID_KNOBS = list(sext_tools.SUBGROUP_MAP_INV.keys()) + ['SVD0'] + sext_tools.HARMONIC_TOP_GROUPS
 
 def make_dummy_eval(gvocs):
    def master_eval_function_dummy(inputs_dict):
       """ Test function """
       assert len(inputs_dict) == len(gvocs.variables)
+      assert all([k in VALID_KNOBS for k in inputs_dict.keys()])
       vals = np.array(list(inputs_dict.values()))
       lt = 10 - 5*np.sum((vals-0.4)**2) + np.random.randn()*0.2
       eff = 100*np.sum(np.abs(vals)) + np.random.randn()*0.05

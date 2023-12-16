@@ -3,6 +3,9 @@ import pandas as pd
 import re, subprocess, sys, pathlib
 import numpy as np
 
+ELEGANT_WIN = r"C:\Users\boss\Downloads\Elegant-x64\elegant.exe"
+ELEGANT_UNIX = "elegant"
+
 """
 A total of 9 sextupole families (3 chromatic [SM*], 6 harmonic): SH1, SH3, SH4, SL1, SL2, SL3, SM1A, SM1B, SM2B
 
@@ -22,11 +25,143 @@ Pentant 2: C29-C30, C01-C04
 Pentant 3: C05-C10
 Pentant 4: C11-C16
 Pentant 5: C17-C22
-
 """
 
-ELEGANT_WIN = r"C:\Users\boss\Downloads\Elegant-x64\elegant.exe"
-ELEGANT_UNIX = "elegant"
+"""
+NSLS-II
+SL1G2C01A: KSEXT, L=0.2, K2=-13.27160605
+SL2G2C01A: KSEXT, L=0.2, K2=35.67792145
+SL3G2C01A: KSEXT, L=0.2, K2=-29.46086061
+SM1G4C01A: KSEXT, L=0.2, K2=-23.68063424
+SM2G4C01B: KSEXT, L=0.25, K2=28.64315469
+SM1G4C01B: KSEXT, L=0.2, K2=-25.94603546
+SH4G6C01B: KSEXT, L=0.2, K2=-15.82090071
+SH3G6C01B: KSEXT, L=0.2, K2=-5.85510841
+SH1G6C01B: KSEXT, L=0.2, K2=19.8329121
+SH1G2C02A: KSEXT, L=0.2, K2=19.8329121
+SH3G2C02A: KSEXT, L=0.2, K2=-5.85510841
+SH4G2C02A: KSEXT, L=0.2, K2=-15.82090071
+SM1G4C02A: KSEXT, L=0.2, K2=-23.68063424
+SM2G4C02B: KSEXT, L=0.25, K2=28.64315469
+SM1G4C02B: KSEXT, L=0.2, K2=-25.94603546
+SL3G6C02B: KSEXT, L=0.2, K2=-29.46086061
+SL2G6C02B: KSEXT, L=0.2, K2=35.67792145
+SL1G6C02B: KSEXT, L=0.2, K2=-13.27160605
+"""
+
+MODES = {'BARE_SH1P12345_SH3P12345_SH4P12345_SL1_SL2_SL3_SVD0':19,# 5+5+5+3+1 = 19
+         'BARE_SH1P12345_SH3P12345_SH4P12345_SL1_SL2_SL3':18,
+         'BARE_SH1P12345_SH3P12345_SH4_SL1_SL2_SL3_SVD0':15, # 5+5+1+3+1 = 15
+         'BARE_SH1P12345_SH3_SH4_SL1_SL2_SL3_SVD0':11, # 5+1+1+3+1 = 11
+         'BARE_SH1_SH3_SH4_SL1_SL2_SL3_SVD0':7, # 1+1+1+3+1 = 7
+         'DW_SH1P12345_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828_SVD0':20, # 5+1+1+1+1+1+3+3+3+1 = 20
+         'DW_SH1P12345_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828':19,
+         'DW_SH1_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828_SVD0':16, # 1+1+1+1+1+1+3+3+3+1 = 16
+         'DW_SH1_SH3_SH4_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828': 15,
+         }
+
+MODE_GROUPS = {}
+for m,cnt in MODES.items():
+    groups = []
+    parts = m.split('_')[1:]
+    for p in parts:
+        if p in ['SH1','SH3','SH4','SL1','SL2','SL3']:
+            groups.append(p)
+        elif p == 'SVD0':
+            groups.append(p)
+        elif p.endswith('P12345'):
+            groups.extend(f"{p.split('P12345')[0]}-P{i}" for i in [1,2,3,4,5])
+        elif p.endswith('DW081828'):
+            groups.extend(f"{p.split('DW081828')[0]}-DW{i:02d}" for i in [8,18,28])
+    
+    MODE_GROUPS[m] = groups
+    assert len(groups) == cnt, f'{m} {groups} {cnt}'
+
+PENTANT_NUMBERS = {1:[23,24,25,26,27,28],
+                   2:[29,30,1,2,3,4],
+                   3:[5,6,7,8,9,10],
+                   4:[11,12,13,14,15,16],
+                   5:[17,18,19,20,21,22]}
+
+INITIAL_VALUES_REF_K2L_BARE = {
+    'SM1A': -23.68063424*0.2,
+    'SM2B': 28.64315469*0.25,
+    'SM1B': -25.94603546*0.2,
+    'SL3': -29.46086061*0.2,
+    'SL2': 35.67792145*0.2,
+    'SL1': -13.27160605*0.2,
+    'SH4': -15.82090071*0.2,
+    'SH3': -5.85510841*0.2,
+    'SH1': 19.8329121*0.2,
+}
+INITIAL_VALUES_REF_K2L_DW = INITIAL_VALUES_REF_K2L_BARE.copy()
+
+HARMONIC_TOP_GROUPS = ['SH1','SH3','SH4','SL1','SL2','SL3']
+SUBGROUP_MAP = {
+    'SL1': ['SL1-P1','SL1-P2','SL1-P3','SL1-P4','SL1-P5',],
+    'SL2': ['SL2-P1','SL2-P2','SL2-P3','SL2-P4','SL2-P5',],
+    'SL3': ['SL3-P1','SL3-P2','SL3-P3','SL3-P4','SL3-P5',],
+    'SH1': ['SH1-P1','SH1-DW28','SH1-P2','SH1-P3','SH1-DW08','SH1-P4','SH1-DW18','SH1-P5',],
+    'SH3': ['SH3-P1','SH3-DW28','SH3-P2','SH3-P3','SH3-DW08','SH3-P4','SH3-DW18','SH3-P5',],
+    'SH4': ['SH4-P1','SH4-DW28','SH4-P2','SH4-P3','SH4-DW08','SH4-P4','SH4-DW18','SH4-P5',],
+    'SM1A': ['SM1A-P1','SM1A-P2','SM1A-P3','SM1A-P4','SM1A-P5',],
+    'SM1B': ['SM1B-P1','SM1B-P2','SM1B-P3','SM1B-P4','SM1B-P5',],
+    'SM2B': ['SM2B-P1','SM2B-P2','SM2B-P3','SM2B-P4','SM2B-P5',],
+}
+
+SUBGROUP_MAP_INV = {}
+for k,v in SUBGROUP_MAP.items():
+    for x in v:
+        SUBGROUP_MAP_INV[x] = k
+
+
+KNOBS_DATAFRAMES = {}
+for m in MODES:
+    index = MODE_GROUPS[m].copy()
+    indexnosvd = index.copy()
+    columns = MODE_GROUPS[m].copy()
+    if 'SVD0' in columns:
+        index.remove('SVD0')
+        indexnosvd.remove('SVD0')
+        index.extend(['SM1A', 'SM1B', 'SM2B'])
+    else:
+        pass
+    df = pd.DataFrame(np.zeros((len(index), len(columns))), index=index, columns=columns)
+    if 'SVD0' in df.columns:
+        df.loc[['SM1A', 'SM1B', 'SM2B'],'SVD0'] = [-0.663666, 0.744816, -0.069260]
+    for i in indexnosvd:
+        df.loc[i,i] = 1.0
+    if 'SVD0' in df.columns:
+        # impact of K2L difference
+        df.loc['SM2B',:] *= 0.25/0.2
+    KNOBS_DATAFRAMES[m] = df
+
+def get_initial_values_ref(mode):
+    """ Get initial k2l values for families in mode"""
+    if 'BARE' in mode:
+        ivals = INITIAL_VALUES_REF_K2L_BARE
+    elif 'DW' in mode:
+        ivals = INITIAL_VALUES_REF_K2L_DW
+    else:
+        raise
+    if mode not in MODES:
+        raise Exception(f'Unknown mode {mode}')
+    vals = {}
+    for g in MODE_GROUPS[mode]:
+        if g in ivals:
+            vals[g] = ivals[g]
+        elif g  == 'SVD0':
+            for sg in ['SM1A', 'SM1B', 'SM2B']:
+                vals[sg] = ivals[sg]
+        else:
+            vals[g] = ivals[SUBGROUP_MAP_INV[g]]
+    assert len(vals) >= len(MODE_GROUPS[mode])
+    return vals
+    
+def verify_funcs():
+    for m in MODES:
+        get_initial_values_ref(m)
+
 
 ele_get_beamline = f"""
 &run_setup
@@ -134,29 +269,7 @@ def sort_by_sector(v):
     return out
 
 
-def make_knobs(mode):
-    """
-    NSLS-II
-    SL1G2C01A: KSEXT, L=0.2, K2=-13.27160605
-    SL2G2C01A: KSEXT, L=0.2, K2=35.67792145
-    SL3G2C01A: KSEXT, L=0.2, K2=-29.46086061
-    SM1G4C01A: KSEXT, L=0.2, K2=-23.68063424
-    SM2G4C01B: KSEXT, L=0.25, K2=28.64315469
-    SM1G4C01B: KSEXT, L=0.2, K2=-25.94603546
-    SH4G6C01B: KSEXT, L=0.2, K2=-15.82090071
-    SH3G6C01B: KSEXT, L=0.2, K2=-5.85510841
-    SH1G6C01B: KSEXT, L=0.2, K2=19.8329121
-    SH1G2C02A: KSEXT, L=0.2, K2=19.8329121
-    SH3G2C02A: KSEXT, L=0.2, K2=-5.85510841
-    SH4G2C02A: KSEXT, L=0.2, K2=-15.82090071
-    SM1G4C02A: KSEXT, L=0.2, K2=-23.68063424
-    SM2G4C02B: KSEXT, L=0.25, K2=28.64315469
-    SM1G4C02B: KSEXT, L=0.2, K2=-25.94603546
-    SL3G6C02B: KSEXT, L=0.2, K2=-29.46086061
-    SL2G6C02B: KSEXT, L=0.2, K2=35.67792145
-    SL1G6C02B: KSEXT, L=0.2, K2=-13.27160605
-    """    
-            
+def make_knobs(mode):            
     groups = {}
     groups_direct = {}
 
