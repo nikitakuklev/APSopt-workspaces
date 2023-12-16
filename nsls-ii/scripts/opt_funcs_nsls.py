@@ -10,8 +10,8 @@ def make_dummy_eval(gvocs):
       assert len(inputs_dict) == len(gvocs.variables)
       assert all([k in VALID_KNOBS for k in inputs_dict.keys()])
       vals = np.array(list(inputs_dict.values()))
-      lt = 12 - 5*np.sum((vals-0.4)**2) + np.random.randn()*0.2
-      eff = 100*np.sum(np.abs(vals)) + np.random.randn()*0.05
+      lt = 5 - 10*np.sum((vals-0.4)**2)/(len(vals)) + np.random.randn()*0.2
+      eff = 2000*np.sum(np.abs(vals))/(len(vals)) + np.random.randn()*0.05
       eff = min(eff, 100)
       extras = {k: np.random.randn() for k in ['_nux', '_nuy', '_eps_x_bxbOn', '_eps_y_bxbOn']}
       return {'LT': lt, 'EFF': eff, **extras}
