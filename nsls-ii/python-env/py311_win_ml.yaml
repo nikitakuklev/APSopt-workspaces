@@ -80,5 +80,6 @@ dependencies:
   - pytorch::torchvision
   - pytorch::pytorch-cuda=11.8
   - gpytorch
-  - botorch>=0.9
+  - botorch>=0.9.5
   - deap
+  - pymoo

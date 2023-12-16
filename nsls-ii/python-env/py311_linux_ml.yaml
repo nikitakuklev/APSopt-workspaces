@@ -82,11 +82,12 @@ dependencies:
   - pytorch::torchvision
   - pytorch::pytorch-cuda=12.1
   - gpytorch
-  - botorch>=0.9
+  - botorch>=0.9.5
   - pyro-ppl
   - deap
   - jax>=0.4
   - numpyro
+  - pymoo
   
   # linux
   - htop
