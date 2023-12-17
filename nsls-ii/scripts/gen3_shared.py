@@ -49,12 +49,12 @@ def prepare(MODE):
         initial_variable_values['SH4N'] -= 0.04
         initial_variable_values['SL1'] += 0.08
         for i in range(1,6):
-            initial_variable_values[f'SL2-P{i}'] -= 0.15 + i*0.05
+            initial_variable_values[f'SL2-P{i}'] -= 0.20 + i*0.07
         for i in range(1,6):
-            initial_variable_values[f'SL3-P{i}'] += 0.15 - i*0.05
-        initial_variable_values['SH1-DW08'] += 0.02
-        initial_variable_values['SH3-DW08'] += 0.02
-        initial_variable_values['SH4-DW08'] += 0.02
+            initial_variable_values[f'SL3-P{i}'] += 0.20 - i*0.07
+        initial_variable_values['SH1-DW08'] += 0.025
+        initial_variable_values['SH3-DW08'] += 0.025
+        initial_variable_values['SH4-DW08'] += 0.025
         initial_variable_values['SH1-DW18'] -= 0.025
         initial_variable_values['SH3-DW18'] -= 0.025
         initial_variable_values['SH4-DW18'] -= 0.025
