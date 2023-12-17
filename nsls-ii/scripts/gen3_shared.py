@@ -43,6 +43,25 @@ def prepare(MODE):
         initial_variable_values['SH1-DW08'] += 0.02
         initial_variable_values['SL2'] -= 0.15
         initial_variable_values['SL3'] -= 0.15
+    elif MODE == 'DW_SH1N_SH3N_SH4N_SL1_SL2P12345_SL3P12345_SH1DW081828_SH3DW081828_SH4DW081828':
+        initial_variable_values['SH1N'] -= 0.05
+        initial_variable_values['SH3N'] += 0.05
+        initial_variable_values['SH4N'] -= 0.04
+        initial_variable_values['SL1'] += 0.08
+        for i in range(1,6):
+            initial_variable_values['SL2-P{i}'] -= 0.15 + i*0.05
+        for i in range(1,6):
+            initial_variable_values['SL3-P{i}'] += 0.15 - i*0.05
+        initial_variable_values['SH1-DW08'] += 0.02
+        initial_variable_values['SH3-DW08'] += 0.02
+        initial_variable_values['SH4-DW08'] += 0.02
+        initial_variable_values['SH1-DW18'] -= 0.025
+        initial_variable_values['SH3-DW18'] -= 0.025
+        initial_variable_values['SH4-DW18'] -= 0.025
+        initial_variable_values['SH1-DW28'] -= 0.025
+        initial_variable_values['SH3-DW28'] -= 0.025
+        initial_variable_values['SH4-DW28'] -= 0.025     
+        
 
     gvocs = GVOCS(variables=variables,
                 variables_active=variables,
