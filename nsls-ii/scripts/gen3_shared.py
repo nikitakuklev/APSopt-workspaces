@@ -24,8 +24,8 @@ def prepare(MODE):
         if k == 'SVD0':
             variables[k] = [-1.0,1.0]
         else:
-            variables[k] = [-np.abs(initial_values_ref[k])*0.15,
-                            np.abs(initial_values_ref[k])*0.15]
+            variables[k] = [-np.abs(initial_values_ref[k])*0.12,
+                            np.abs(initial_values_ref[k])*0.12]
     objectives_active = {'LT': 'MAXIMIZE', 'EFF':'MAXIMIZE'}
     initial_variable_values = {k:0.0 for k in variables.keys()}
 
@@ -33,6 +33,11 @@ def prepare(MODE):
     if MODE == 'BARE_SH1_SH3_SH4_SL1_SL2_SL3_SVD0':
         initial_variable_values['SH1'] -= 0.2
         initial_variable_values['SH3'] -= 0.08
+        initial_variable_values['SL2'] -= 0.5
+        initial_variable_values['SL3'] -= 0.5
+    elif MODE == 'DW_SH1N_SH3N_SH4N_SL1_SL2_SL3_SH1DW081828_SH3DW081828_SH4DW081828':
+        initial_variable_values['SH1N'] -= 0.25
+        initial_variable_values['SH3N'] -= 0.12
         initial_variable_values['SL2'] -= 0.5
         initial_variable_values['SL3'] -= 0.5
 
