@@ -41,8 +41,8 @@ def prepare(MODE):
         initial_variable_values['SH4-DW08'] += 0.02
         initial_variable_values['SH3-DW08'] += 0.02
         initial_variable_values['SH1-DW08'] += 0.02
-        initial_variable_values['SL2'] -= 0.4
-        initial_variable_values['SL3'] -= 0.4
+        initial_variable_values['SL2'] -= 0.25
+        initial_variable_values['SL3'] -= 0.25
 
     gvocs = GVOCS(variables=variables,
                 variables_active=variables,
