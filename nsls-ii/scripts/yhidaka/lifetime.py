@@ -24,11 +24,12 @@ REGBPM_SUMSTD_PVS = [
 REGBPM_COUNTS_PVS = [
     PV(f"{prefix}AmplV:Max-I", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
 ]
-# REGBPM_ATTENUATE_PVS = [
-#     PV(f"{prefix}AmplV:Max-I", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
-# ]
-"SR:C01-BI{BPM:1}Gain:RfAtte-I"
-"SR:C01-BI{BPM:1}Gain:RfAtte-SP"
+REGBPM_ATTENUATE_PVSPS = [
+    PV(f"{prefix}Gain:RfAtte-I", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
+]
+REGBPM_ATTENUATE_PVRBS = [
+    PV(f"{prefix}Gain:RfAtte-SP", auto_monitor=False) for prefix in REGBPM_PV_PREFIXES
+]
 
 nRegBPM = len(REGBPM_PV_PREFIXES)
 
@@ -425,19 +426,52 @@ def measLifetimeAdaptivePeriod(
     return out
 
 
+def turn_on_AGC():
+    # 0 := OFF, 1 := ON, 2 := Sleep
+    if PVS["AGC_RB"].get() != 1:
+        PVS["AGC_SP"].put(1)
+
+
+def turn_off_AGC():
+    # 0 := OFF, 1 := ON, 2 := Sleep
+    if PVS["AGC_RB"].get() != 0:
+        PVS["AGC_SP"].put(0)
+
+
+def set_REGBPM_attenuation(dB):
+    assert isinstance(dB, int)
+    assert 0 <= dB <= 30
+
+    for pv in REGBPM_ATTENUATE_PVSPS:
+        pv.put(dB)
+
+
+def get_REGBPM_attenuation():
+    return np.array([pv.get() for pv in REGBPM_ATTENUATE_PVRBS])
+
+
+def get_REGBPM_signal_counts():
+    return np.array([pv.get() for pv in REGBPM_COUNTS_PVS])
+
+
 if __name__ == "__main__":
-    out = measLifetimeAdaptivePeriod(
-        max_wait=120.0,
-        update_period=0.5,  # 1.0,
-        sigma_cut=3.0,
-        sum_diff_thresh_fac=10.0,  # 5.0,
-        min_samples=5,
-        abort_pv=None,
-        mode="online",
-        min_dcct_mA=0.2,
-        measured_data=None,
-        measured_data_time_index=None,
-        show_plot=False,
-        plt_show=True,
-        profiler_on=False,
-    )
+    if False:
+        out = measLifetimeAdaptivePeriod(
+            max_wait=120.0,
+            update_period=0.5,  # 1.0,
+            sigma_cut=3.0,
+            sum_diff_thresh_fac=10.0,  # 5.0,
+            min_samples=5,
+            abort_pv=None,
+            mode="online",
+            min_dcct_mA=0.2,
+            measured_data=None,
+            measured_data_time_index=None,
+            show_plot=False,
+            plt_show=True,
+            profiler_on=False,
+        )
+    elif False:
+        print(get_REGBPM_attenuation())
+    elif True:
+        print(get_REGBPM_signal_counts())

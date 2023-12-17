@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from collections import defaultdict
 import sys
+from datetime import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -78,7 +79,7 @@ def apply_sextupole_changes(inputs_dict):
                 step_wait=1.0,
                 wait_small_SP_RB_diff=False,
                 max_SP_RB_dI=0.05,
-            )  # TO-ADJUST
+            )
     else:
         K2L_list = []
         family_list = []
@@ -87,7 +88,7 @@ def apply_sextupole_changes(inputs_dict):
             family_list.append(family)
         sexts_ctrl.change_sext_strengths(
             K2L_list, family_list, max_dI=1.0, step_wait=1.0
-        )  # TO-ADJUST
+        )
 
     print(f"Sextupole adj. took {time.perf_counter()-tStart:.1f}.")
 
@@ -95,7 +96,7 @@ def apply_sextupole_changes(inputs_dict):
     time.sleep(1.0)
 
 
-def setup_for_orbit_correction(bba_ref=True, use_adaptive=True):
+def setup_for_orbit_correction(bba_ref=True, use_adaptive=True, use_FOFB=False):
     """Set reference orbit and other settings for SOFB"""
 
     if not bba_ref:
@@ -109,6 +110,15 @@ def setup_for_orbit_correction(bba_ref=True, use_adaptive=True):
         apply_scalar_pv_change(PVS["SOFB_adaptive"], 0)
     else:
         apply_scalar_pv_change(PVS["SOFB_adaptive"], 1)
+
+    if use_FOFB:
+        apply_scalar_pv_change(PVS["SOFB_F2S_max_orb_dev_um"], 50.0)
+        # 2 um for UOFB Operation Mode
+        # 50 um for UOFB Fill Mode
+
+        apply_scalar_pv_change(PVS["SOFB_F2S_max_fcor_rms"], 0.4)
+        # 0.02 um for UOFB Operation Mode
+        # 0.4 A for UOFB Fill Mode
 
 
 def turn_on_SOFB():
@@ -129,23 +139,83 @@ def turn_off_SOFB():
         PVS["SOFB_turn_off"].get()
 
 
-def correct_orbit(SOFB_off_on_exit, dx_rms_thresh=2e-6, dy_rms_thresh=2e-6):
+def turn_on_FOFB():
+    if lifetime.PVS["DCCT_1"].get() < 1.0:
+        print("WARNING: No beam. Not turning on FOFB")
+        return
+
+    if PVS["FOFB_enabled"].get() != 1:
+        print("FOFB not enabled yet. Enabling now!")
+        PVS["FOFB_turn_on"].put(1)
+        PVS["FOFB_turn_on"].get()
+
+
+def turn_off_FOFB():
+    if PVS["FOFB_enabled"].get() != 0:
+        print("FOFB enabled. Disabling now!")
+        PVS["FOFB_turn_off"].put(1)
+        PVS["FOFB_turn_off"].get()
+
+
+def wait_for_FOFB_on():
+    while PVS["FOFB_enabled"].get() != 0:
+        time.sleep(1.0)
+
+
+def correct_orbit(
+    SOFB_off_on_exit,
+    dx_rms_thresh=2e-6,
+    dy_rms_thresh=2e-6,
+    FOFB_on=False,
+    max_FCOR_thresh=0.1,
+):
     while PVS["SOFB_mon_enabled"].get() == 0:
         PVS["SOFB_mon_turn_on"].put(1)
         PVS["SOFB_mon_turn_on"].get()
         time.sleep(2.0)
 
-    while True:
-        dx_rms = PVS["SOFB_dx_rms"].get() * 1e-3
-        dy_rms = PVS["SOFB_dy_rms"].get() * 1e-3
-        print(f"RMS(dx, dy) [m] = ({dx_rms:.3e}, {dy_rms:.3e})")
+    if not FOFB_on:
+        while True:
+            dx_rms = PVS["SOFB_dx_rms"].get() * 1e-3
+            dy_rms = PVS["SOFB_dy_rms"].get() * 1e-3
+            print(f"RMS(dx, dy) [m] = ({dx_rms:.3e}, {dy_rms:.3e})")
 
-        if (dx_rms > dx_rms_thresh) or (dy_rms > dy_rms_thresh):
-            turn_on_SOFB()
-            time.sleep(3.0)
-        else:
-            print("Orbit correction converged")
-            break
+            if (dx_rms > dx_rms_thresh) or (dy_rms > dy_rms_thresh):
+                turn_on_SOFB()
+                time.sleep(3.0)
+            else:
+                print("Orbit correction converged")
+                break
+    else:
+        while True:
+            I_abs_max = np.max(
+                np.abs(
+                    [
+                        PVS[k].get()
+                        for k in [
+                            "SOFB_max_H",
+                            "SOFB_min_H",
+                            "SOFB_max_V",
+                            "SOFB_min_V",
+                        ]
+                    ]
+                )
+            )
+            dx_rms = PVS["SOFB_dx_rms"].get() * 1e-3
+            dy_rms = PVS["SOFB_dy_rms"].get() * 1e-3
+            print(
+                f"Max FCOR I [A] = {I_abs_max:.3f}; RMS(dx, dy) [m] = ({dx_rms:.3e}, {dy_rms:.3e})"
+            )
+
+            if (
+                (dx_rms > dx_rms_thresh)
+                or (dy_rms > dy_rms_thresh)
+                or (I_abs_max > max_FCOR_thresh)
+            ):
+                time.sleep(1.0)
+            else:
+                print("Orbit correction converged")
+                break
 
     if SOFB_off_on_exit:
         turn_off_SOFB()
@@ -252,16 +322,18 @@ def correct_tunes(dnu_thresh=2e-3):
 
 
 def setup_for_chrom_meas():
+    turn_on_BxB_feedback()
+
     PVS["chrom_freq_LB"].put(-100)
     PVS["chrom_freq_LB"].get()
 
     PVS["chrom_freq_UB"].put(+100)
     PVS["chrom_freq_UB"].get()
 
-    PVS["chrom_nsteps"].put(3)
+    PVS["chrom_nsteps"].put(5)
     PVS["chrom_nsteps"].get()
 
-    PVS["chrom_step_wait"].put(3.0)
+    PVS["chrom_step_wait"].put(5.0)
     PVS["chrom_step_wait"].get()
 
     PVS["chrom_tune_src"].put(0)  # 0=BxB; 1=TbT
@@ -275,20 +347,18 @@ def cleanup_for_chrom_meas():
     PVS["chrom_fit_order"].put(2)
     PVS["chrom_fit_order"].get()
 
+    turn_off_BxB_feedback()
+
 
 def meas_lin_chrom(max_wait=60.0):
-    # TOFIX: it doesn't wait until measurement ends (Use message to detect it)
-
     ksix_pv = PVS["lin_ksi_x"]
     ksiy_pv = PVS["lin_ksi_y"]
-
-    _ = ksix_pv.get()
-    prev_ts = ksix_pv.timestamp
 
     PVS["chrom_meas_start"].put(1, wait=True)
 
     t0 = time.perf_counter()
-    while ksix_pv.timestamp == prev_ts:
+    time.sleep(3.0)
+    while PVS["chrom_meas_msg"].get() == "Measuring...":
         time.sleep(2.0)
         lin_ksix = ksix_pv.get()
         lin_ksiy = ksiy_pv.get()
@@ -297,6 +367,8 @@ def meas_lin_chrom(max_wait=60.0):
             lin_ksix = np.nan
             lin_ksiy = np.nan
             break
+
+    print(f"Chormaticity measurement took {time.perf_counter() - t0:.1f} [s]")
 
     return lin_ksix, lin_ksiy
 
@@ -355,39 +427,172 @@ def meas_beam_props_w_bxb_on(duration):
     return res
 
 
-def prep_for_optim():
-    injection.setup_kickout_pinger_settings()
+def save_ops_conditions_to_file():
+    keys = [
+        "RF_freq_SP",
+        "DCCT_range",
+        "nux_SP",
+        "nuy_SP",
+        "tune_fb_min_dcct",
+        "max_tune_delta",
+        "bxb_trig_src_x",
+        "bxb_trig_src_y",
+    ]
+    # -- DCCT_range -- 1 := "1 A", 2 := "200 mA"
+    # -- bxb_trig_src_x / bxb_trig_src_y -- 0 := "SOFT", 1 := "HARD"
 
-    turn_off_BxB_feedback()
+    d = {k: PVS[k].get() for k in keys}
 
-    target_bunch_mA = 0.4
-    injection.inject_camshaft_up_to(target_bunch_mA, slee_after_inj=1.0)
+    Path(f"{datetime.now():%Y%m%dT%H%M%S}_opts_conditions.json").write_text(
+        json.dumps(d, indent=2)
+    )
 
-    injection.FIXED_GUN_SETTINGS["MBM_volt"] = 29.0
-    injection.FIXED_GUN_SETTINGS["grid_volt"] = 59.0
 
-    target_dcct_mA_list = [10.0, 20.0]
+def load_ops_conditions_from_latest_file():
+    latest_fp = list(Path.cwd().glob("*_opts_conditions.json"))[-1]
+    print(f"Loading from {latest_fp}...")
+
+    d = json.loads(latest_fp.read_text())
+
+    for k in [
+        "nux_SP",
+        "nuy_SP",
+        "tune_fb_min_dcct",
+        "max_tune_delta",
+        "bxb_trig_src_x",
+        "bxb_trig_src_y",
+    ]:
+        PVS[k].put(d[k])
+        PVS[k].get()
+
+    # Make sure there is no beam before changing the DCCT range
+    assert lifetime.PVS["DCCT_1"].get() < 0.2
+    k = "DCCT_range"
+    PVS[k].put(d[k])
+
+    # Ramp back to the original RF frequency
+    ramp_RF_freq(d["RF_freq_SP"], step_Hz=20.0)
+
+
+def ramp_RF_freq(target_GHz, step_Hz=20.0):
+    assert 0.0 < step_Hz <= 20.0
+
+    step_GHz = step_Hz / 1e9
+
+    ini_Hz = PVS["RF_freq_RB"].get()  # [Hz]
+    ini_GHz = ini_Hz / 1e9  # [GHz]
+
+    abs_diff_GHz = np.abs(target_GHz - ini_GHz)
+    n = int(np.ceil(abs_diff_GHz / step_GHz))
+
+    freq_GHz_array = np.linspace(ini_GHz, target_GHz, n + 1)[1:]
+    for i, GHz in enumerate(freq_GHz_array):
+        print(f"Setting RF freq to {GHz:.12f} GHz")
+        PVS["RF_freq_SP"].put(GHz)
+        PVS["RF_freq_SP"].get()
+        if i != len(freq_GHz_array) - 1:
+            time.sleep(3.0)
+
+
+def get_lifetime_bunches_fill_pattern():
     # target_bucket_number_list = [1300, 20]  # [1281, 0]
     target_bucket_number_list = [1300 - 5, 20 + 5]
     # pulse_width_ns_list = [40.0, 40.0]
     pulse_width_ns_list = [50.0, 50.0]
-    injection.refill_lifetime_meas_bunches(
-        target_dcct_mA_list, target_bucket_number_list, pulse_width_ns_list
+
+    return dict(
+        target_bucket_number_list=target_bucket_number_list,
+        pulse_width_ns_list=pulse_width_ns_list,
     )
 
-    # TODO: Do lattice correction with the actual fill pattern, not <2 mA
 
-    # TODO: Set chrom to +3/+3
-    # TODO: Add vertical dispersion to 15 pm
+def prep_step_1():
+    lifetime.turn_on_AGC()
 
-    # TODO: Set right BPM attenuattion (20-dB)
+    # Set DCCT range to 200 mA
+    apply_scalar_pv_change(PVS["DCCT_range"], 2)
 
-    # TODO: add automatic refill when beam is too low or just pring WARNING
+    turn_on_BxB_feedback()
+    turn_on_tune_feedback()
 
-    # TODO: lifetime -> add "max_samples" (or use "max_wait")
+    target_bunch_mA = 0.2
+    injection.inject_camshaft_up_to(target_bunch_mA, slee_after_inj=1.0)
 
-    # TODO: Restore all settings after the shift (RF freq, DCCT range,
-    # tune FB target tunes, BBF soft trig., etc.)
+    setup_for_orbit_correction(bba_ref=True, use_adaptive=True, use_FOFB=False)
+
+    injection.FIXED_GUN_SETTINGS["MBM_volt"] = 29.0
+    injection.FIXED_GUN_SETTINGS["grid_volt"] = 59.0
+
+    fill_pat = get_lifetime_bunches_fill_pattern()
+
+    # Inject up to 1.6 mA
+    target_dcct_mA_list = [0.2 + 0.6, 0.2 + 0.6 * 2]
+    injection.refill_lifetime_meas_bunches(
+        target_dcct_mA_list,
+        fill_pat["target_bucket_number_list"],
+        fill_pat["pulse_width_ns_list"],
+    )
+
+    turn_on_SOFB()
+
+
+def prep_step_2():
+    fill_pat = get_lifetime_bunches_fill_pattern()
+
+    # Inject "lifetime" bunches up to 20 mA
+    target_dcct_mA_list = [10.0, 20.0]
+    injection.refill_lifetime_meas_bunches(
+        target_dcct_mA_list,
+        fill_pat["target_bucket_number_list"],
+        fill_pat["pulse_width_ns_list"],
+    )
+
+    lifetime.turn_off_AGC()
+
+    lifetime.set_REGBPM_attenuation(20)
+
+
+def prep_step_3():
+    turn_off_SOFB()
+    turn_off_tune_feedback()
+    turn_off_BxB_feedback()
+
+
+def prep_step_4():
+    turn_on_BxB_feedback()
+
+    injection.setup_kickout_pinger_settings()
+
+
+def prep_step_5():
+    turn_on_FOFB()
+    wait_for_FOFB_on()
+    setup_for_orbit_correction(bba_ref=True, use_adaptive=True, use_FOFB=True)
+    turn_on_SOFB()
+
+    # TODO (Done): lifetime -> add "max_samples" (or use "max_wait")
+
+    # TODO: record fill pattern monitor related PVs while injecting lifetime bunches
+
+
+def inj_lifetime_bunches_w_camshaft():
+    target_bunch_mA = 0.4
+    injection.inject_camshaft_up_to(target_bunch_mA, slee_after_inj=1.0)
+
+    fill_pat = get_lifetime_bunches_fill_pattern()
+
+    # Inject "lifetime" bunches up to 20 mA
+    target_dcct_mA_list = [10.0, 20.0]
+    injection.refill_lifetime_meas_bunches(
+        target_dcct_mA_list,
+        fill_pat["target_bucket_number_list"],
+        fill_pat["pulse_width_ns_list"],
+    )
+
+
+def check_if_refill_needed(min_DCCT_mA=10.0):
+    if lifetime.PVS["DCCT_1"].get() < min_DCCT_mA:
+        print("\nWARNING: DCCT is too low for objective evaluation!")
 
 
 def master_eval_function(
@@ -519,6 +724,8 @@ def master_eval_function(
 
     outputs = {}
 
+    check_if_refill_needed()
+
     # Set sextupoles
     logger.info(f"Setting sextupoles to {inputs_dict}")
 
@@ -531,9 +738,22 @@ def master_eval_function(
 
     apply_sextupole_changes(inputs_dict_copy)
 
-    # Correct orbit (Thresholds in [m])
+    # Correct orbit
+    if False:
+        use_FOFB = False  # (Thresholds in [m])
+    else:
+        use_FOFB = True  # (Thresholds in [A])
     SOFB_off_on_exit = False
-    correct_orbit(SOFB_off_on_exit, dx_rms_thresh=10e-6, dy_rms_thresh=10e-6)
+    if not use_FOFB:
+        correct_orbit(SOFB_off_on_exit, dx_rms_thresh=10e-6, dy_rms_thresh=10e-6)
+    else:
+        correct_orbit(
+            SOFB_off_on_exit,
+            dx_rms_thresh=10e-6,
+            dy_rms_thresh=10e-6,
+            FOFB_on=True,
+            max_FCOR_thresh=0.1,
+        )
 
     if meas_bxb_tunes:
         turn_on_BxB_feedback()
@@ -562,11 +782,11 @@ def master_eval_function(
         t0 = time.perf_counter()
         try:
             res = lifetime.measLifetimeAdaptivePeriod(
-                max_wait=120.0,
+                max_wait=10.0,  # 120.0,
                 update_period=0.5,
                 sigma_cut=3.0,
                 sum_diff_thresh_fac=5.0,  # 10.0,
-                min_samples=5,  # min. of 5 seconds
+                min_samples=5,  # min. of 2.5 seconds
                 abort_pv=None,
                 mode="online",
                 min_dcct_mA=0.2,
@@ -632,7 +852,12 @@ if __name__ == "__main__":
     if False:
         # Measure chromaticity [must use at least 5-sec dealy between
         # each step to allow 4-step BxB tune window]
-        lin_ksix, lin_ksiy = meas_lin_chrom(max_wait=60.0)
+        setup_for_chrom_meas()
+        lin_ksix, lin_ksiy = meas_lin_chrom(max_wait=120.0)
+        print(
+            f"Chromaticity (x, y) = ({lin_ksix:.2f}, {lin_ksiy:.2f})",
+        )
+        cleanup_for_chrom_meas()
 
     elif False:
         duration = 5.0  # [s]
@@ -648,21 +873,16 @@ if __name__ == "__main__":
         setup_for_tune_correction()
 
     elif False:
-        setup_for_orbit_correction(bba_ref=True, use_adaptive=True)
-
-    elif False:
-        # TOFIX
-        lin_ksix, lin_ksiy = meas_lin_chrom(max_wait=60.0)
-        print(lin_ksix, lin_ksiy)
+        setup_for_orbit_correction(bba_ref=True, use_adaptive=True, use_FOFB=True)
 
     elif False:
         prep_for_optim()
 
-    elif True:
+    elif False:
         # turn_off_BxB_feedback()
         turn_on_BxB_feedback()
 
-    elif True:
+    elif False:
         if False:
             inputs_dict = json.loads(
                 Path(
@@ -672,16 +892,87 @@ if __name__ == "__main__":
             # inputs_dict['SM2'] = inputs_dict['SM2B']
             # del inputs_dict['SM2B']
 
-        inputs_dict = {
-            "SL1": -2.8533953007500004,
-            "SL2": 6.6004154682500005,
-            "SL3": -6.334085031150001,
-            "SH1": 3.6690887385,
-            "SH3": -1.25884830815,
-            "SH4": -3.40149365265,
-            "SM1A": -4.27066061076,
-            "SM1B": -5.48713351964,
-            "SM2B": 7.295418874749999,
+        elif False:
+            inputs_dict = {
+                "SL1": -2.8533953007500004,
+                "SL2": 6.6004154682500005,
+                "SL3": -6.334085031150001,
+                "SH1": 3.6690887385,
+                "SH3": -1.25884830815,
+                "SH4": -3.40149365265,
+                "SM1A": -4.27066061076,
+                "SM1B": -5.48713351964,
+                "SM2B": 7.295418874749999,
+            }
+
+        elif False:
+            inputs_dict = {
+                "SH1N": 3.3715950570000004,
+                "SH3N": -1.3466749343,
+                "SH4N": -3.6388071633,
+                "SL1": -3.0524693915000003,
+                "SL2": 6.0652466465,
+                "SL3": -6.775997940300001,
+                "SH1-DW08": 3.3715950570000004,
+                "SH1-DW18": 3.3715950570000004,
+                "SH1-DW28": 3.3715950570000004,
+                "SH3-DW08": -1.3466749343,
+                "SH3-DW18": -1.3466749343,
+                "SH3-DW28": -1.3466749343,
+                "SH4-DW08": -3.6388071633,
+                "SH4-DW18": -3.6388071633,
+                "SH4-DW28": -3.6388071633,
+            }
+
+        elif True:
+            nominal_inputs = {
+                "SM1A": -4.7361268480000005,
+                "SM2B": 7.1607886725,
+                "SM1B": -5.189207092,
+                "SL3": -5.892172122000001,
+                "SL2": 7.135584290000001,
+                "SL1": -2.6543212100000004,
+                "SH4": -3.164180142,
+                "SH3": -1.171021682,
+                "SH1": 3.9665824200000004,
+            }
+            inputs_dict = nominal_inputs
+
+        master_eval_function(inputs_dict, meas_lifetime=True, meas_inj_eff=True)
+
+    elif True:
+        nominal_inputs = {
+            "SM1A": -4.7361268480000005,
+            "SM2B": 7.1607886725,
+            "SM1B": -5.189207092,
+            "SL3": -5.892172122000001,
+            "SL2": 7.135584290000001,
+            "SL1": -2.6543212100000004,
+            "SH4": -3.164180142,
+            "SH3": -1.171021682,
+            "SH1": 3.9665824200000004,
         }
 
-        master_eval_function(inputs_dict, meas_lifetime=True)
+        inputs_dict_copy = {}
+        for k, v in nominal_inputs.items():
+            if k == "SM2B":
+                inputs_dict_copy["SM2"] = v
+            else:
+                inputs_dict_copy[k] = v
+
+        apply_sextupole_changes(inputs_dict_copy)
+
+    elif True:
+        target_bunch_mA = 0.4
+        injection.inject_camshaft_up_to(target_bunch_mA, slee_after_inj=1.0)
+
+    elif True:
+        fill_pat = get_lifetime_bunches_fill_pattern()
+
+        # Inject "lifetime" bunches up to 20 mA
+        target_dcct_mA_list = [17.5, 20.5]
+        injection.refill_lifetime_meas_bunches(
+            target_dcct_mA_list,
+            fill_pat["target_bucket_number_list"],
+            fill_pat["pulse_width_ns_list"],
+        )

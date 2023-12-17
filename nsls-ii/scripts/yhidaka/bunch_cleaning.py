@@ -226,59 +226,6 @@ if __name__ == "__main__":
     if False:
         capture_ops_conditions()
 
-    if False:  # TO-BE-DELETED
-        import numpy as np
-        import matplotlib.pyplot as plt
-
-        csv_2d_filename = "csv-8.csv"
-        csv_yproj_filename = "vprojection.csv"
-
-        first_line = np.loadtxt(
-            csv_2d_filename, skiprows=0, max_rows=1, dtype=object, delimiter=","
-        )
-        header_tokens = []
-        first_row = []
-        for s in first_line:
-            try:
-                v = float(s)
-                first_row.append(v)
-            except:
-                header_tokens.append(s)
-        header = ",".join(header_tokens)
-        y_pos = np.array(first_row)
-        rest = np.loadtxt(csv_2d_filename, skiprows=1, delimiter=",")
-        x_pos = rest[:, 0]
-        intensity = rest[:, 1:]
-
-        plt.figure()
-        plt.pcolor(y_pos * 1e3, x_pos * 1e3, intensity, cmap="jet")
-        plt.ylabel("x [mm]")
-        plt.xlabel("y [mm]")
-        plt.colorbar()
-
-        yproj = np.sum(intensity, axis=0)
-        xproj = np.sum(intensity, axis=1)
-
-        vproj_from_csv = np.loadtxt(csv_yproj_filename, skiprows=1, delimiter=",")
-
-        plt.figure()
-        plt.plot(y_pos * 1e3, yproj / np.max(yproj), "r.-", label="From 2D array csv")
-        plt.plot(
-            vproj_from_csv[:, 0] * 1e3,
-            vproj_from_csv[:, 1] / np.max(vproj_from_csv[:, 1]),
-            "b.-",
-            label="From projection csv",
-        )
-        plt.legend(loc="best")
-        plt.xlabel("y [mm]")
-        plt.ylabel("Normalized projected intensity")
-
-        plt.figure()
-        plt.plot(x_pos * 1e3, xproj, ".-")
-        plt.xlabel("x [mm]")
-
-        plt.show()
-
 if __name__ == "__main__":
     # turn_off_BxB_feedback()
     turn_on_BxB_feedback()

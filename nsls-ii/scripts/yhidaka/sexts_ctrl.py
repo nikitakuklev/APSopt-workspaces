@@ -36,6 +36,15 @@ SEXT_FAM2PVS = {
     fam: [SEXT_GROUP2PV[SEXT_PVSP_MAP[f"{fam}_{i+1}"]["group"]] for i in range(n_kids)]
     for fam, n_kids in SEXT_FAM2NKIDS.items()
 }
+for i in [1, 3, 4]:
+    SEXT_FAM2PVS[f"SH{i}N"] = [
+        pv for pv in SEXT_FAM2PVS[f"SH{i}"] if "DW" not in pv.pvname
+    ]
+_special_map = {
+    "SH1N": [0, 2, 4, 5, 7],
+    "SH3N": [0, 2, 4, 5, 7],
+    "SH4N": [0, 1, 3, 5, 6],
+}
 
 SEXT_SPPVNAME2RBPVS = {
     pv.pvname: PV(pv.pvname.replace(":Sp1-SP", ":Ps1DCCT1-I"), auto_monitor=False)
@@ -61,6 +70,12 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
     else:
         raise ValueError(f"No match found for 2nd argument: {family_or_group}")
 
+    if family in ("SH1N", "SH3N", "SH4N"):
+        sp_indexes = _special_map[family]
+        family = family[:-1]
+    else:
+        sp_indexes = None
+
     interp_func = interp1d(
         UNITCONV[family]["phy"],
         UNITCONV[family]["raw"],
@@ -73,7 +88,10 @@ def convertGroupedSextPhySetpoints(target_sp_phy, family_or_group):
     target_sp_raws = interp_func(target_sp_phy)
 
     if group is None:  # whole family
-        outputs = target_sp_raws  # [A]
+        if sp_indexes is None:
+            outputs = target_sp_raws  # [A]
+        else:
+            outputs = target_sp_raws[sp_indexes]
     else:
         outputs = [target_sp_raws[index]]  # [A]
 
