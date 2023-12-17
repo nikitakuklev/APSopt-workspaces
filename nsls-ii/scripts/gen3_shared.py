@@ -55,7 +55,7 @@ def compute_family_k2l_from_knob_k2l(dfknobs, knobs_dict, ivals, debug=False):
 YOSHI_PATH = "/nsls2/users/yhidaka/git_repos/nsls2scripts3/shifts/2023-12-16_APSU_DA_MA"
 
 
-def get_eval_f(TEST_MODE, gvocs, dfknobs):
+def get_eval_f(TEST_MODE, gvocs, dfknobs, ivals):
     if TEST_MODE:
         from opt_funcs_nsls import make_dummy_eval
         eval_f = make_dummy_eval(gvocs)
@@ -64,7 +64,7 @@ def get_eval_f(TEST_MODE, gvocs, dfknobs):
         import opt_funcs
 
         def knobs_to_family(inputs_dict):
-            d = compute_family_k2l_from_knob_k2l(dfknobs, inputs_dict, True)
+            d = compute_family_k2l_from_knob_k2l(dfknobs, inputs_dict, ivals, True)
             return opt_funcs.master_eval_function(d, meas_bxb_tunes=True, meas_lifetime=True, meas_inj_eff=True)
 
         eval_f = knobs_to_family
